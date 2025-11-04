@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = "SUA_CHAVE_SECRETA_MUITO_FORTE_AQUI"; // Use a MESMA chave do index.js
+const JWT_SECRET = process.env.JWT_SECRET;
 
 function authMiddleware(req, res, next) {
     // Pega o token do cabeçalho 'Authorization'
