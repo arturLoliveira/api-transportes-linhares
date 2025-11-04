@@ -90,7 +90,6 @@ app.post('/api/coletas/solicitar', async (req, res) => {
 });
 
 
-// 2. RASTREAMENTO (REMETENTE) (Atualizado para Nº Encomenda)
 app.post('/api/rastreamento/remetente', async (req, res) => {
   try {
     const { numeroEncomenda, cpfCnpj } = req.body;
@@ -116,7 +115,6 @@ app.post('/api/rastreamento/remetente', async (req, res) => {
   }
 });
 
-// 3. RASTREAMENTO (DESTINATÁRIO) (Atualizado com Senha e Nº Encomenda)
 app.post('/api/rastreamento/destinatario', async (req, res) => {
     try {
         const { numeroEncomenda, cpfCnpj } = req.body;
