@@ -119,17 +119,13 @@ app.post('/api/rastreamento/remetente', async (req, res) => {
 // 3. RASTREAMENTO (DESTINATÁRIO) (Atualizado com Senha e Nº Encomenda)
 app.post('/api/rastreamento/destinatario', async (req, res) => {
     try {
-        const { numeroEncomenda, cpfCnpj, senha } = req.body;
+        const { numeroEncomenda, cpfCnpj } = req.body;
 
         const cliente = await prisma.cliente.findUnique({ where: { cpfCnpj: cpfCnpj } });
         if (!cliente) {
             return res.status(404).json({ error: "Cliente (CPF/CNPJ) não encontrado." });
         }
 
-        const senhaCorreta = await bcrypt.compare(senha, cliente.senha);
-        if (!senhaCorreta) {
-            return res.status(401).json({ error: "Senha de acesso inválida." });
-        }
 
         const coleta = await prisma.solicitacaoColeta.findUnique({
             where: { numeroEncomenda: numeroEncomenda },
