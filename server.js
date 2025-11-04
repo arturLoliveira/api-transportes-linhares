@@ -146,7 +146,7 @@ app.post('/api/rastreamento/destinatario', async (req, res) => {
     }
 });
 
-apiRouter.post('/devolucoes/solicitar', async (req, res) => {
+app.post('/devolucoes/solicitar', async (req, res) => {
     try {
         const { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao } = req.body;
 
