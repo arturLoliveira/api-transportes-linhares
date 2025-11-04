@@ -146,47 +146,25 @@ app.post('/api/rastreamento/destinatario', async (req, res) => {
     }
 });
 
-app.post('/devolucoes/solicitar', async (req, res) => {
+app.post('/api/devolucoes/solicitar', async (req, res) => {
     try {
         const { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao } = req.body;
-
-        // Usamos uma transação para garantir que ambas as operações ocorram
-        await prisma.$transaction([
-            // 1. Cria o novo registro de "Solicitação de Devolução"
-            prisma.solicitacaoDevolucao.create({
-                data: { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao }
-            }),
-            
-            // 2. Atualiza o status da Coleta original para "EM_DEVOLUCAO"
-            prisma.solicitacaoColeta.update({
-                where: { 
-                    numeroNotaFiscal: numeroNFOriginal // Encontra a coleta pela NF
-                },
-                data: { 
-                    status: 'EM_DEVOLUCAO' // Define o novo status
-                }
-            })
-        ]);
-
-        // 3. Envia o e-mail de confirmação (como antes)
+        const novaDevolucao = await prisma.solicitacaoDevolucao.create({
+            data: { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao }
+        });
         await resend.emails.send({
-            from: 'onboarding@resend.dev',
+            from: 'onboarding@resend.dev', 
             to: emailCliente,
             subject: 'Confirmação de Solicitação de Devolução',
             html: `<p>Olá ${nomeCliente},</p><p>Recebemos sua solicitação para devolver a NF ${numeroNFOriginal}.</p><p>O prazo de coleta é de até 3 dias.</p>`
         });
-        
-        res.status(201).json({ message: "Solicitação de devolução registrada e status da coleta atualizado." });
-
+        res.status(201).json(novaDevolucao);
     } catch (error) {
         console.error("Erro na devolução:", error);
-        // Se a NF original não for encontrada (P2025), o $transaction falha
-        if (error.code === 'P2025') {
-            return res.status(404).json({ error: "A Nota Fiscal original informada não foi encontrada." });
-        }
         res.status(500).json({ error: "Erro ao processar devolução." });
     }
 });
+
 // 5. EMISSÃO DE FATURA (PDF de Exemplo)
 app.get('/api/fatura/:nf', async (req, res) => {
     try {

@@ -74,7 +74,6 @@ enum StatusColeta {
   COLETADO        
   EM_TRANSITO     
   EM_ROTA_ENTREGA 
-  EM_DEVOLUCAO
   CONCLUIDA
   CANCELADA
 }
