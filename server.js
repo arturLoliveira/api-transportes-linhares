@@ -338,16 +338,15 @@ app.post('/api/admin/login', async (req, res) => {
 
 // 10. ADMIN: Registrar Cliente
 app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
-    const { cpfCnpj, senha, nome, email } = req.body;
+    const { cpfCnpj, nome, email } = req.body;
     
-    if (!cpfCnpj || !senha) {
+    if (!cpfCnpj) {
         return res.status(400).json({ error: "CPF/CNPJ e senha são obrigatórios." });
     }
-    const senhaHash = await bcrypt.hash(senha, 10); 
 
     try {
         const novoCliente = await prisma.cliente.create({
-            data: { cpfCnpj, senha: senhaHash, nome, email }
+            data: { cpfCnpj, nome, email }
         });
         res.status(201).json(novoCliente);
     } catch (e) {
