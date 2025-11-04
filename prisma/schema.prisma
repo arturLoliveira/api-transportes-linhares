@@ -1,0 +1,79 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL" )
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model SolicitacaoColeta {
+  id               Int      @id @default(autoincrement())
+  nomeCliente      String
+  emailCliente     String
+  enderecoColeta   String
+  tipoCarga        String?
+  dataSolicitacao  DateTime @default(now())
+  status           StatusColeta @default(PENDENTE)
+  numeroEncomenda String? @unique
+
+  cpfCnpjRemetente   String
+  cpfCnpjDestinatario String
+  numeroNotaFiscal   String   @unique
+  valorFrete         Float    
+  pesoKg             Float?   
+  dataVencimento     DateTime?
+  boletoUrl             String?  
+  boletoLinhaDigitavel  String?  
+  boletoStatusPagamento String?
+  historico        HistoricoRastreio[]
+  driverToken      String?  @unique
+
+  @@map("solicitacoes_coleta")
+}
+
+model SolicitacaoDevolucao {
+  id                Int      @id @default(autoincrement())
+  nomeCliente       String
+  emailCliente      String
+  numeroNFOriginal  String   
+  motivoDevolucao   String?
+  dataSolicitacao   DateTime @default(now())
+
+  @@map("solicitacoes_devolucao")
+}
+
+model Funcionario {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  senha     String   
+  nome      String
+}
+model Cliente {
+  id      Int     @id @default(autoincrement())
+  cpfCnpj String  @unique // CPF/CNPJ do cliente (destinatário)
+  nome    String? // Nome (opcional)
+  email   String? // Email (opcional)
+
+  @@map("clientes")
+}
+model HistoricoRastreio {
+  id            Int      @id @default(autoincrement())
+  data          DateTime @default(now()) 
+  status        String   
+  localizacao   String   
+
+  solicitacaoId   Int
+  solicitacao     SolicitacaoColeta @relation(fields: [solicitacaoId], references: [id])
+
+  @@map("historico_rastreio")
+}
+
+enum StatusColeta {
+  PENDENTE        
+  COLETADO        
+  EM_TRANSITO     
+  EM_ROTA_ENTREGA 
+  CONCLUIDA
+  CANCELADA
+}
