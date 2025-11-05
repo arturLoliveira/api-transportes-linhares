@@ -6,22 +6,17 @@ const prisma = new PrismaClient();
 async function main() {
     console.log("Iniciando o script de seed...");
 
-    // 1. Defina os dados do seu primeiro funcionário
     const adminEmail = "admin@transportes.com";
-    const adminSenha = "admin123"; // Defina uma senha forte depois
+    const adminSenha = "admin123"; 
     const adminNome = "Administrador";
 
-    // 2. Criptografe a senha
     const senhaHash = await bcrypt.hash(adminSenha, 10);
     console.log("Senha criptografada.");
 
-    // 3. Crie o funcionário (usando 'upsert')
-    // 'upsert' tenta ATUALIZAR. Se não encontrar, ele CRIA.
-    // Isso é ótimo porque você pode rodar o seed várias vezes sem criar duplicatas.
     const admin = await prisma.funcionario.upsert({
-        where: { email: adminEmail }, // Como encontrar o usuário
-        update: {}, // O que atualizar (nada, no caso)
-        create: { // O que criar se não for encontrado
+        where: { email: adminEmail }, 
+        update: {}, 
+        create: { 
             email: adminEmail,
             senha: senhaHash,
             nome: adminNome
@@ -33,7 +28,6 @@ async function main() {
     console.log("Seed concluído com sucesso!");
 }
 
-// Executa a função main
 main()
     .catch((e) => {
         console.error(e);

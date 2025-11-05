@@ -56,7 +56,6 @@ app.post('/api/coletas/solicitar', async (req, res) => {
         return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
     }
 
-    // 1. Salva a coleta primeiro para obter o ID
     const novaSolicitacao = await prisma.solicitacaoColeta.create({
       data: {
         nomeCliente, emailCliente, enderecoColeta, tipoCarga,
@@ -67,11 +66,9 @@ app.post('/api/coletas/solicitar', async (req, res) => {
       }
     });
 
-    // 2. Gera os campos secundários
     const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
     const driverTokenGerado = crypto.randomBytes(16).toString('hex');
 
-    // 3. Atualiza a coleta com os novos campos
     const coletaAtualizada = await prisma.solicitacaoColeta.update({
         where: { id: novaSolicitacao.id },
         data: {
@@ -165,7 +162,6 @@ app.post('/api/devolucoes/solicitar', async (req, res) => {
     }
 });
 
-// 5. EMISSÃO DE FATURA (PDF de Exemplo)
 app.get('/api/fatura/:nf', async (req, res) => {
     try {
         const { nf } = req.params;
@@ -206,7 +202,6 @@ app.get('/api/fatura/:nf', async (req, res) => {
     }
 });
 
-// 6. IMPRIMIR ETIQUETA (PDF de Exemplo)
 app.get('/api/etiqueta/:nf', async (req, res) => {
     try {
         const { nf } = req.params;
@@ -232,9 +227,7 @@ app.get('/api/etiqueta/:nf', async (req, res) => {
 });
 
 
-// --- ROTA PÚBLICA (MOTORISTA) ---
 
-// 7. MOTORISTA: Atualizar Status via QR Code
 app.post('/api/driver/update', async (req, res) => {
     const { numeroEncomenda, token, status, localizacao } = req.body;
 
@@ -279,9 +272,7 @@ app.post('/api/driver/update', async (req, res) => {
 });
 
 
-// --- ROTAS DE ADMIN (Autenticadas) ---
 
-// 8. ADMIN: Registrar Funcionário (Para testes)
 app.post('/api/admin/registrar', async (req, res) => {
     const { email, senha, nome } = req.body;
     const senhaHash = await bcrypt.hash(senha, 10); 
@@ -291,9 +282,8 @@ app.post('/api/admin/registrar', async (req, res) => {
     res.status(201).json(novoFuncionario);
 });
 
-// 9. ADMIN: Login Funcionário (COM CHECKPOINTS)
 app.post('/api/admin/login', async (req, res) => {
-    console.log("BACKEND: Rota /api/admin/login ALCANÇADA."); // Ponto de Partida
+    console.log("BACKEND: Rota /api/admin/login ALCANÇADA."); 
     const { email, senha } = req.body;
 
     try {
@@ -329,7 +319,6 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
-// 10. ADMIN: Registrar Cliente
 app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
     const { cpfCnpj, nome, email } = req.body;
     
@@ -351,7 +340,6 @@ app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
     }
 });
 
-// 11. ADMIN: Ver Devoluções
 app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
     try {
         const devolucoes = await prisma.solicitacaoDevolucao.findMany({
@@ -364,7 +352,6 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
     }
 });
 
-// 12. ADMIN: Ver Coletas (com filtro)
 app.get('/api/admin/coletas', authMiddleware, async (req, res) => {
     const { status } = req.query; 
     let whereClause = {}; 
@@ -384,7 +371,6 @@ app.get('/api/admin/coletas', authMiddleware, async (req, res) => {
     }
 });
 
-// 13. ADMIN: Ver Estatísticas
 app.get('/api/admin/stats', authMiddleware, async (req, res) => {
     try {
         const today = new Date();
@@ -411,7 +397,6 @@ app.get('/api/admin/stats', authMiddleware, async (req, res) => {
     }
 });
 
-// 14. ADMIN: Adicionar Evento de Histórico (a rota correta de update)
 app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) => {
     const { nf } = req.params;
     const { status, localizacao } = req.body;
@@ -447,7 +432,6 @@ app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) =>
     }
 });
 
-// --- Iniciar o Servidor ---
 app.listen(PORT, () => {
   console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });
