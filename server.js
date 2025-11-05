@@ -352,19 +352,48 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
     }
 });
 
-app.get('/api/admin/coletas', authMiddleware, async (req, res) => {
-    const { status } = req.query; 
-    let whereClause = {}; 
-    
-    if (status && Object.values(StatusColeta).includes(status)) {
-        whereClause.status = status;
-    }
+app.get('/api/admin/coletas', async (req, res) => {
     try {
-        const coletas = await prisma.solicitacaoColeta.findMany({
-            where: whereClause,
-            orderBy: { dataSolicitacao: 'desc' }
+        const { status, search, page = 1 } = req.query;
+        
+        const pageSize = 10; 
+        const pageNumber = parseInt(page, 10);
+        const skip = (pageNumber - 1) * pageSize;
+
+        let whereClause = {};
+        
+        if (status && Object.values(StatusColeta).includes(status)) {
+            whereClause.status = status;
+        }
+        if (search) {
+            whereClause.OR = [
+                { numeroEncomenda: { contains: search, mode: 'insensitive' } },
+                { numeroNotaFiscal: { contains: search, mode: 'insensitive' } },
+                { nomeCliente: { contains: search, mode: 'insensitive' } },
+                { cpfCnpjDestinatario: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+        const [coletas, totalColetas] = await prisma.$transaction([
+            prisma.solicitacaoColeta.findMany({
+                where: whereClause,
+                orderBy: { dataSolicitacao: 'desc' },
+                take: pageSize, 
+                skip: skip      
+            }),
+            prisma.solicitacaoColeta.count({
+                where: whereClause
+            })
+        ]);
+        res.status(200).json({
+            coletas: coletas,
+            pagination: {
+                totalCount: totalColetas,
+                pageSize: pageSize,
+                currentPage: pageNumber,
+                totalPages: Math.ceil(totalColetas / pageSize)
+            }
         });
-        res.status(200).json(coletas);
+
     } catch (error) {
         console.error("Erro ao buscar coletas:", error);
         res.status(500).json({ error: "Erro ao buscar dados." });
