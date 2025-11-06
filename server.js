@@ -520,6 +520,125 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
+app.get('/api/admin/funcionarios', authMiddleware, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        const funcionarios = await prisma.funcionario.findMany({
+            select: {
+                id: true,
+                email: true,
+                nome: true,
+            },
+            orderBy: { nome: 'asc' }
+        });
+
+        return res.status(200).json(funcionarios);
+    } catch (error) {
+        console.error('ERRO CRÍTICO NA LISTAGEM DE FUNCIONÁRIOS:', error); 
+        return res.status(500).json({ error: 'Erro interno ao buscar funcionários.' });
+    }
+});
+
+app.post('/api/admin/funcionarios', authMiddleware, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores podem cadastrar." });
+    }
+
+    const { email, senha, nome } = req.body;
+
+    if (!email || !senha || !nome) {
+        return res.status(400).json({ error: 'Email, senha e nome são obrigatórios.' });
+    }
+
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const senhaHash = await bcrypt.hash(senha, salt);
+
+        const novoFuncionario = await prisma.funcionario.create({
+            data: {
+                email,
+                senha: senhaHash,
+                nome
+            }
+        });
+
+        const { senha: _, ...funcionarioInfo } = novoFuncionario;
+        return res.status(201).json(funcionarioInfo);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao cadastrar funcionário:', error);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ error: 'Email já cadastrado.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao cadastrar funcionário.' });
+    }
+});
+
+app.put('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { nome, email, senha } = req.body;
+    const funcionarioId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        let updateData = { nome, email };
+
+        if (senha) {
+            const salt = await bcrypt.genSalt(10);
+            updateData.senha = await bcrypt.hash(senha, salt);
+        }
+
+        const funcionarioAtualizado = await prisma.funcionario.update({
+            where: { id: funcionarioId },
+            data: updateData,
+            select: { id: true, nome: true, email: true }, 
+        });
+
+        return res.status(200).json(funcionarioAtualizado);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao editar funcionário:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Funcionário não encontrado.' });
+        }
+        if (error.code === 'P2002') {
+             return res.status(409).json({ error: 'Email já cadastrado.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao atualizar funcionário.' });
+    }
+});
+
+
+app.delete('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const funcionarioId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        await prisma.funcionario.delete({
+            where: { id: funcionarioId },
+        });
+
+        return res.status(200).json({ message: `Funcionário ${funcionarioId} excluído com sucesso.` });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao excluir funcionário:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Funcionário não encontrado.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao excluir funcionário.' });
+    }
+});
+
 app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
     const { cpfCnpj, nome, email } = req.body;
 
@@ -604,26 +723,58 @@ app.get('/api/admin/coletas',authMiddleware, async (req, res) => {
 app.get('/api/admin/stats', authMiddleware, async (req, res) => {
     try {
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-        const coletasHoje = await prisma.solicitacaoColeta.count({
-            where: { dataSolicitacao: { gte: today, lt: tomorrow } }
+        const coletasMes = await prisma.solicitacaoColeta.count({
+            where: {
+                dataSolicitacao: {
+                    gte: firstDayOfMonth,
+                },
+            },
         });
-        const devolucoesPendentes = await prisma.solicitacaoDevolucao.count();
-        const coletasEntregues = await prisma.solicitacaoColeta.count({
-            where: { status: 'CONCLUIDA' }
+        const contagemStatus = await prisma.solicitacaoColeta.groupBy({
+            by: ['status'],
+            _count: {
+                id: true,
+            },
         });
 
-        res.status(200).json({
-            coletasHoje: coletasHoje,
-            devolucoesPendentes: devolucoesPendentes,
-            coletasEntregues: coletasEntregues
+        const totalPorStatus = {
+            PENDENTE: 0,
+            COLETADO: 0,
+            EM_TRANSITO: 0,
+            EM_ROTA_ENTREGA: 0,
+            CONCLUIDA: 0,
+            CANCELADA: 0,
+            EM_DEVOLUCAO: 0,
+        };
+
+        contagemStatus.forEach(item => {
+            if (item.status in totalPorStatus) {
+                totalPorStatus[item.status] = item._count.id;
+            }
         });
+
+        const faturamentoAgregado = await prisma.solicitacaoColeta.aggregate({
+            _sum: {
+                valorFrete: true,
+            },
+            where: {
+                status: 'CONCLUIDA',
+            },
+        });
+
+        const faturamentoTotal = faturamentoAgregado._sum.valorFrete || 0;
+
+        return res.status(200).json({
+            statusCounts: totalPorStatus,
+            faturamentoTotal: faturamentoTotal,
+            coletasMes
+        });
+
     } catch (error) {
-        console.error("Erro ao buscar estatísticas:", error);
-        res.status(500).json({ error: "Erro ao buscar dados." });
+        console.error('ERRO NO BACKEND: Falha ao obter estatísticas:', error);
+        return res.status(500).json({ error: 'Erro interno ao processar as estatísticas.' });
     }
 });
 

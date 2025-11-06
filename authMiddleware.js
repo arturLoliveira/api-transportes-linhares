@@ -23,13 +23,16 @@ function authMiddleware(req, res, next) {
             return res.status(401).json({ error: "Token inválido ou expirado." });
         }
         
-        
+    
         if (decoded.role !== 'admin' && decoded.role !== 'cliente') {
-             return res.status(403).json({ error: "Permissão negada. Role inválida." });
+             return res.status(403).json({ error: "Permissão negada. Role inválida ou ausente no token." });
         }
 
         req.user = decoded; 
         
+        req.userId = decoded.id; 
+        
+
         return next();
     });
 }
