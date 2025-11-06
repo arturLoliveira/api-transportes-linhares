@@ -656,6 +656,83 @@ app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) =>
     }
 });
 
+app.post('/api/cliente/cadastro', async (req, res) => {
+    const { cpfCnpj, senha, nome, email } = req.body;
+    const JWT_SECRET = process.env.JWT_SECRET; 
+
+    if (!cpfCnpj || !senha) {
+        return res.status(400).json({ error: 'CPF/CNPJ e senha são obrigatórios.' });
+    }
+
+    try {
+        const clienteExistente = await prisma.cliente.findUnique({
+            where: { cpfCnpj: cpfCnpj }
+        });
+
+        if (clienteExistente) {
+            return res.status(409).json({ error: 'CPF/CNPJ já cadastrado.' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const senhaHash = await bcrypt.hash(senha, salt);
+
+        const novoCliente = await prisma.cliente.create({
+            data: {
+                cpfCnpj: cpfCnpj,
+                senha: senhaHash,
+                nome: nome,
+                email: email
+            }
+        });
+
+        const { senha: _, ...clienteInfo } = novoCliente;
+
+        return res.status(201).json({ 
+            message: 'Cadastro realizado com sucesso. Por favor, faça login.',
+            cliente: clienteInfo
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha no cadastro do cliente:', error);
+        return res.status(500).json({ error: 'Erro interno ao cadastrar cliente.' });
+    }
+});
+app.post('/api/cliente/login', async (req, res) => {
+    const { cpfCnpj, senha } = req.body;
+    const JWT_SECRET = process.env.JWT_SECRET; 
+
+    if (!cpfCnpj || !senha) {
+        return res.status(400).json({ error: 'CPF/CNPJ e senha são obrigatórios.' });
+    }
+
+    try {
+        const cliente = await prisma.cliente.findUnique({
+            where: { cpfCnpj: cpfCnpj }
+        });
+
+        if (!cliente || !cliente.senha) {
+             return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        const isMatch = await bcrypt.compare(senha, cliente.senha); 
+
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        const token = jwt.sign( 
+            { id: cliente.id, cpfCnpj: cliente.cpfCnpj, role: 'cliente' },
+            JWT_SECRET,
+            { expiresIn: '1d' }
+        );
+
+        return res.status(200).json({ token: token });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha no login do cliente:', error);
+        return res.status(500).json({ error: 'Erro interno no login.' });
+    }
+});
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });

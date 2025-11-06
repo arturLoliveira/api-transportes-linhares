@@ -51,7 +51,8 @@ model Funcionario {
 }
 model Cliente {
   id      Int     @id @default(autoincrement())
-  cpfCnpj String  @unique // CPF/CNPJ do cliente (destinatário)
+  cpfCnpj String  @unique 
+  senha   String
   nome    String? // Nome (opcional)
   email   String? // Email (opcional)
 
