@@ -1019,7 +1019,6 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
     if (req.user.role !== 'cliente') {
         return res.status(403).json({ error: "Acesso negado. Apenas clientes podem visualizar suas coletas." });
     }
-
     try {
         const clienteCpfCnpj = req.user.cpfCnpj;
 
@@ -1034,25 +1033,56 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
                 historico: {
                     orderBy: { data: 'desc' },
                 }
-            },
-            select: {
-                numeroNFOriginal: true,
-                statusProcessamento: true
             }
         });
-        const coletasComDevolucao = coletas.map(coleta => {
-            const statusDev = statusDevolucoes.find(d => d.numeroNFOriginal === coleta.numeroNotaFiscal);
+
+        const coletasComDevolucao = await Promise.all(coletas.map(async (coleta) => {
+            const devolucao = await prisma.solicitacaoDevolucao.findFirst({
+                where: { numeroNFOriginal: coleta.numeroNotaFiscal },
+            });
             return {
                 ...coleta,
-                statusDevolucaoProcessamento: statusDev?.statusProcessamento || null
+                statusDevolucaoProcessamento: devolucao?.statusProcessamento || null,
+                motivoRejeicaoDevolucao: devolucao?.motivoRejeicao || null,
             };
-        });
-
-        return res.status(200).json(coletas);
+        }));
+        
+        return res.status(200).json(coletasComDevolucao);
 
     } catch (error) {
-        console.error("ERRO NO BACKEND: Falha ao buscar coletas do cliente:", error);
-        return res.status(500).json({ error: "Erro interno ao buscar dados." });
+        console.error('ERRO NO BACKEND: Falha ao buscar coletas do cliente:', error);
+        return res.status(500).json({ error: 'Erro interno ao buscar dados.' });
+    }
+});
+
+app.put('/api/admin/devolucoes/:nf/rejeitar', authMiddleware, async (req, res) => {
+    const { nf } = req.params;
+    const { motivoRejeicao } = req.body;
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+    if (!motivoRejeicao || motivoRejeicao.trim() === '') {
+        return res.status(400).json({ error: "O motivo da rejeição é obrigatório." });
+    }
+
+    try {
+        const devolucaoAtualizada = await prisma.solicitacaoDevolucao.update({
+            where: { numeroNFOriginal: nf }, 
+            data: { 
+                statusProcessamento: 'REJEITADA', 
+                motivoRejeicao: motivoRejeicao 
+            }
+        });
+
+        return res.status(200).json(devolucaoAtualizada);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao rejeitar devolução:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Solicitação de devolução não encontrada.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao rejeitar devolução.' });
     }
 });
 app.listen(PORT, () => {
