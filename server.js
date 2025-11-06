@@ -287,7 +287,7 @@ app.delete('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
     try {
         await prisma.historicoRastreio.deleteMany({
             where: {
-                solicitacaoId: coletaId, 
+                solicitacaoId: coletaId,
             },
         });
 
@@ -333,7 +333,7 @@ app.get('/api/rastreamento/publico/:id', async (req, res) => {
         if (!coleta) {
             return res.status(404).json({ error: 'Coleta não encontrada. Verifique o número.' });
         }
-        
+
         return res.status(200).json({
             numeroEncomenda: coleta.numeroEncomenda,
             status: coleta.status,
@@ -351,11 +351,11 @@ app.get('/api/rastreamento/publico/:id', async (req, res) => {
 });
 
 app.post('/api/devolucao/solicitar', async (req, res) => {
-    const { 
-        numeroNFOriginal, 
-        nomeCliente, 
-        emailCliente, 
-        motivoDevolucao 
+    const {
+        numeroNFOriginal,
+        nomeCliente,
+        emailCliente,
+        motivoDevolucao
     } = req.body;
 
     if (!numeroNFOriginal || !nomeCliente || !emailCliente) {
@@ -365,23 +365,23 @@ app.post('/api/devolucao/solicitar', async (req, res) => {
     try {
         const coletaOriginal = await prisma.solicitacaoColeta.findUnique({
             where: { numeroNotaFiscal: numeroNFOriginal },
-            select: { 
-                id: true, 
-                status: true, 
-                numeroEncomenda: true 
+            select: {
+                id: true,
+                status: true,
+                numeroEncomenda: true
             }
         });
 
         if (!coletaOriginal) {
             return res.status(404).json({ error: 'Nota Fiscal não encontrada ou não vinculada a uma coleta.' });
         }
-        
+
         if (coletaOriginal.status !== 'CONCLUIDA' && coletaOriginal.status !== 'EM_DEVOLUCAO') {
-             return res.status(400).json({ 
-                 error: `A coleta deve estar CONCLUIDA para solicitar devolução. Status atual: ${coletaOriginal.status}`
-             });
+            return res.status(400).json({
+                error: `A coleta deve estar CONCLUIDA para solicitar devolução. Status atual: ${coletaOriginal.status}`
+            });
         }
-        
+
         const [solicitacaoDevolucao, atualizacaoColeta] = await prisma.$transaction([
             prisma.solicitacaoDevolucao.create({
                 data: {
@@ -405,8 +405,8 @@ app.post('/api/devolucao/solicitar', async (req, res) => {
                 select: { numeroEncomenda: true, status: true }
             })
         ]);
-        return res.status(200).json({ 
-            message: 'Solicitação de devolução registrada com sucesso. O status da coleta foi atualizado.', 
+        return res.status(200).json({
+            message: 'Solicitação de devolução registrada com sucesso. O status da coleta foi atualizado.',
             coleta: atualizacaoColeta,
             solicitacaoId: solicitacaoDevolucao.id
         });
@@ -537,7 +537,7 @@ app.get('/api/admin/funcionarios', authMiddleware, async (req, res) => {
 
         return res.status(200).json(funcionarios);
     } catch (error) {
-        console.error('ERRO CRÍTICO NA LISTAGEM DE FUNCIONÁRIOS:', error); 
+        console.error('ERRO CRÍTICO NA LISTAGEM DE FUNCIONÁRIOS:', error);
         return res.status(500).json({ error: 'Erro interno ao buscar funcionários.' });
     }
 });
@@ -597,7 +597,7 @@ app.put('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
         const funcionarioAtualizado = await prisma.funcionario.update({
             where: { id: funcionarioId },
             data: updateData,
-            select: { id: true, nome: true, email: true }, 
+            select: { id: true, nome: true, email: true },
         });
 
         return res.status(200).json(funcionarioAtualizado);
@@ -608,7 +608,7 @@ app.put('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
             return res.status(404).json({ error: 'Funcionário não encontrado.' });
         }
         if (error.code === 'P2002') {
-             return res.status(409).json({ error: 'Email já cadastrado.' });
+            return res.status(409).json({ error: 'Email já cadastrado.' });
         }
         return res.status(500).json({ error: 'Erro interno ao atualizar funcionário.' });
     }
@@ -673,7 +673,7 @@ app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
                 email: true,
             },
             orderBy: {
-                id: 'asc', 
+                id: 'asc',
             }
         });
 
@@ -697,7 +697,7 @@ app.post('/api/cliente/login', async (req, res) => {
         });
 
         if (!cliente || !cliente.senha) {
-             return res.status(401).json({ error: 'Credenciais inválidas.' });
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
 
         const isMatch = await bcrypt.compare(senha, cliente.senha);
@@ -740,7 +740,7 @@ app.put('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
         const clienteAtualizado = await prisma.cliente.update({
             where: { id: clienteId },
             data: updateData,
-            select: { id: true, nome: true, email: true, cpfCnpj: true }, 
+            select: { id: true, nome: true, email: true, cpfCnpj: true },
         });
 
         return res.status(200).json(clienteAtualizado);
@@ -751,7 +751,7 @@ app.put('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
             return res.status(404).json({ error: 'Cliente não encontrado.' });
         }
         if (error.code === 'P2002') {
-             return res.status(409).json({ error: 'CPF/CNPJ ou e-mail já cadastrado.' });
+            return res.status(409).json({ error: 'CPF/CNPJ ou e-mail já cadastrado.' });
         }
         return res.status(500).json({ error: 'Erro interno ao atualizar cliente.' });
     }
@@ -797,7 +797,7 @@ app.put('/api/admin/devolucoes/:id/status', authMiddleware, async (req, res) => 
     }
 });
 
-app.get('/api/admin/coletas',authMiddleware, async (req, res) => {
+app.get('/api/admin/coletas', authMiddleware, async (req, res) => {
     try {
         const { status, search, page = 1 } = req.query;
 
@@ -940,7 +940,7 @@ app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) =>
 
 app.post('/api/cliente/cadastro', async (req, res) => {
     const { cpfCnpj, senha, nome, email } = req.body;
-    const JWT_SECRET = process.env.JWT_SECRET; 
+    const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!cpfCnpj || !senha) {
         return res.status(400).json({ error: 'CPF/CNPJ e senha são obrigatórios.' });
@@ -969,7 +969,7 @@ app.post('/api/cliente/cadastro', async (req, res) => {
 
         const { senha: _, ...clienteInfo } = novoCliente;
 
-        return res.status(201).json({ 
+        return res.status(201).json({
             message: 'Cadastro realizado com sucesso. Por favor, faça login.',
             cliente: clienteInfo
         });
@@ -981,7 +981,7 @@ app.post('/api/cliente/cadastro', async (req, res) => {
 });
 app.post('/api/cliente/login', async (req, res) => {
     const { cpfCnpj, senha } = req.body;
-    const JWT_SECRET = process.env.JWT_SECRET; 
+    const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!cpfCnpj || !senha) {
         return res.status(400).json({ error: 'CPF/CNPJ e senha são obrigatórios.' });
@@ -993,16 +993,16 @@ app.post('/api/cliente/login', async (req, res) => {
         });
 
         if (!cliente || !cliente.senha) {
-             return res.status(401).json({ error: 'Credenciais inválidas.' });
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
 
-        const isMatch = await bcrypt.compare(senha, cliente.senha); 
+        const isMatch = await bcrypt.compare(senha, cliente.senha);
 
         if (!isMatch) {
             return res.status(401).json({ error: 'Credenciais inválidas.' });
         }
 
-        const token = jwt.sign( 
+        const token = jwt.sign(
             { id: cliente.id, cpfCnpj: cliente.cpfCnpj, role: 'cliente' },
             JWT_SECRET,
             { expiresIn: '1d' }
@@ -1034,7 +1034,18 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
                 historico: {
                     orderBy: { data: 'desc' },
                 }
+            },
+            select: {
+                numeroNFOriginal: true,
+                statusProcessamento: true
             }
+        });
+        const coletasComDevolucao = coletas.map(coleta => {
+            const statusDev = statusDevolucoes.find(d => d.numeroNFOriginal === coleta.numeroNotaFiscal);
+            return {
+                ...coleta,
+                statusDevolucaoProcessamento: statusDev?.statusProcessamento || null
+            };
         });
 
         return res.status(200).json(coletas);
