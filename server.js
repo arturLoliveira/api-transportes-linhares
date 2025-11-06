@@ -285,6 +285,12 @@ app.delete('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
     const coletaId = parseInt(id);
 
     try {
+        await prisma.historicoRastreio.deleteMany({
+            where: {
+                solicitacaoId: coletaId, 
+            },
+        });
+
         const coletaExcluida = await prisma.solicitacaoColeta.delete({
             where: {
                 id: coletaId,
@@ -292,7 +298,7 @@ app.delete('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
         });
 
         return res.status(200).json({
-            message: `Coleta #${coletaId} excluída com sucesso.`,
+            message: `Coleta #${coletaExcluida.numeroEncomenda} excluída com sucesso.`,
             id: coletaExcluida.id
         });
 
@@ -501,7 +507,7 @@ app.post('/api/admin/login', async (req, res) => {
         }
 
         console.log("BACKEND: Checkpoint 5 - A gerar o token...");
-        const token = jwt.sign({ id: funcionario.id, email: funcionario.email }, JWT_SECRET, {
+        const token = jwt.sign({ id: funcionario.id, email: funcionario.email, role: 'admin' }, JWT_SECRET, {
             expiresIn: '8h'
         });
 
@@ -547,7 +553,7 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
     }
 });
 
-app.get('/api/admin/coletas', async (req, res) => {
+app.get('/api/admin/coletas',authMiddleware, async (req, res) => {
     try {
         const { status, search, page = 1 } = req.query;
 
@@ -731,6 +737,35 @@ app.post('/api/cliente/login', async (req, res) => {
     } catch (error) {
         console.error('ERRO NO BACKEND: Falha no login do cliente:', error);
         return res.status(500).json({ error: 'Erro interno no login.' });
+    }
+});
+app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
+    if (req.user.role !== 'cliente') {
+        return res.status(403).json({ error: "Acesso negado. Apenas clientes podem visualizar suas coletas." });
+    }
+
+    try {
+        const clienteCpfCnpj = req.user.cpfCnpj;
+
+        const coletas = await prisma.solicitacaoColeta.findMany({
+            where: {
+                OR: [
+                    { cpfCnpjRemetente: clienteCpfCnpj },
+                    { cpfCnpjDestinatario: clienteCpfCnpj }
+                ]
+            },
+            include: {
+                historico: {
+                    orderBy: { data: 'desc' },
+                }
+            }
+        });
+
+        return res.status(200).json(coletas);
+
+    } catch (error) {
+        console.error("ERRO NO BACKEND: Falha ao buscar coletas do cliente:", error);
+        return res.status(500).json({ error: "Erro interno ao buscar dados." });
     }
 });
 app.listen(PORT, () => {
