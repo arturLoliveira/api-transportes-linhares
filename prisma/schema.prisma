@@ -39,6 +39,7 @@ model SolicitacaoDevolucao {
   numeroNFOriginal  String   
   motivoDevolucao   String?
   dataSolicitacao   DateTime @default(now())
+  statusProcessamento String?
 
   @@map("solicitacoes_devolucao")
 }

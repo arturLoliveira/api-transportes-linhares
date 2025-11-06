@@ -768,6 +768,34 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Erro ao buscar dados." });
     }
 });
+app.put('/api/admin/devolucoes/:id/status', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { statusProcessamento } = req.body;
+    const devolucaoId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado." });
+    }
+    if (!statusProcessamento) {
+        return res.status(400).json({ error: "O campo statusProcessamento é obrigatório." });
+    }
+
+    try {
+        const devolucaoAtualizada = await prisma.solicitacaoDevolucao.update({
+            where: { id: devolucaoId },
+            data: { statusProcessamento: statusProcessamento },
+        });
+
+        return res.status(200).json(devolucaoAtualizada);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao atualizar devolução:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Solicitação de devolução não encontrada.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao atualizar devolução.' });
+    }
+});
 
 app.get('/api/admin/coletas',authMiddleware, async (req, res) => {
     try {
