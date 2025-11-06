@@ -659,6 +659,103 @@ app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Erro ao cadastrar cliente." });
     }
 });
+app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        const clientes = await prisma.cliente.findMany({
+            select: {
+                id: true,
+                cpfCnpj: true,
+                nome: true,
+                email: true,
+            },
+            orderBy: {
+                id: 'asc', 
+            }
+        });
+
+        res.json(clientes);
+    } catch (error) {
+        console.error("Erro ao buscar clientes:", error);
+        res.status(500).json({ error: "Erro interno ao buscar clientes." });
+    }
+});
+app.post('/api/cliente/login', async (req, res) => {
+    const { cpfCnpj, senha } = req.body;
+    const JWT_SECRET = process.env.JWT_SECRET;
+
+    if (!cpfCnpj || !senha) {
+        return res.status(400).json({ error: 'CPF/CNPJ e senha são obrigatórios.' });
+    }
+
+    try {
+        const cliente = await prisma.cliente.findUnique({
+            where: { cpfCnpj: cpfCnpj }
+        });
+
+        if (!cliente || !cliente.senha) {
+             return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        const isMatch = await bcrypt.compare(senha, cliente.senha);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Credenciais inválidas.' });
+        }
+
+        const token = jwt.sign(
+            { id: cliente.id, cpfCnpj: cliente.cpfCnpj, role: 'cliente' },
+            JWT_SECRET,
+            { expiresIn: '1d' }
+        );
+
+        return res.status(200).json({ token: token });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha no login do cliente:', error);
+        return res.status(500).json({ error: 'Erro interno no login.' });
+    }
+});
+
+app.put('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { nome, email, cpfCnpj, novaSenha } = req.body;
+    const clienteId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        let updateData = { nome, email, cpfCnpj };
+
+        if (novaSenha) {
+            const salt = await bcrypt.genSalt(10);
+            updateData.senha = await bcrypt.hash(novaSenha, salt);
+        }
+
+        const clienteAtualizado = await prisma.cliente.update({
+            where: { id: clienteId },
+            data: updateData,
+            select: { id: true, nome: true, email: true, cpfCnpj: true }, 
+        });
+
+        return res.status(200).json(clienteAtualizado);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao editar cliente:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Cliente não encontrado.' });
+        }
+        if (error.code === 'P2002') {
+             return res.status(409).json({ error: 'CPF/CNPJ ou e-mail já cadastrado.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao atualizar cliente.' });
+    }
+});
 
 app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
     try {
