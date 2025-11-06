@@ -1,115 +1,109 @@
 require('dotenv').config();
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('supabase.co')) {
-    const url = new URL(process.env.DATABASE_URL);
 
-    const hostSemPorta = url.hostname;
-
-    process.env.DATABASE_URL = `postgresql://${url.username}:${url.password}@${hostSemPorta}:5432${url.pathname}?sslmode=require&pgbouncer=disable`;
-}
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient, StatusColeta } = require('@prisma/client');
-const { Resend } = require('resend'); 
-const PDFDocument = require('pdfkit'); 
+const { Resend } = require('resend');
+const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('./authMiddleware');
-const crypto = require('crypto'); 
+const crypto = require('crypto');
 
 const app = express();
 const prisma = new PrismaClient();
-const resend = new Resend('process.env.RESEND_API_KEY'); 
-const JWT_SECRET = process.env.JWT_SECRET; 
+const resend = new Resend('process.env.RESEND_API_KEY');
+const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = 3001;
 
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL_DEV,  
-  process.env.FRONTEND_URL_PROD 
+    process.env.FRONTEND_URL_DEV,
+    process.env.FRONTEND_URL_PROD
 ];
 
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'), false);
-    }
-  },
-  credentials: true, 
-  methods: ['GET', 'POST', 'PUT', 'DELETE']
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'), false);
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
 }));
 app.use(express.json());
 
 
 
 app.post('/api/coletas/solicitar', async (req, res) => {
-  try {
-    console.log("BACKEND: Nova solicitação recebida:", req.body);
-    const { 
-        nomeCliente, emailCliente, enderecoColeta, tipoCarga, 
-        cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
-        valorFrete, pesoKg, dataVencimento 
-    } = req.body;
+    try {
+        console.log("BACKEND: Nova solicitação recebida:", req.body);
+        const {
+            nomeCliente, emailCliente, enderecoColeta, tipoCarga,
+            cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
+            valorFrete, pesoKg, dataVencimento
+        } = req.body;
 
-    if (!valorFrete || parseFloat(valorFrete) <= 0) {
-        return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
-    }
-
-    const novaSolicitacao = await prisma.solicitacaoColeta.create({
-      data: {
-        nomeCliente, emailCliente, enderecoColeta, tipoCarga,
-        cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
-        valorFrete: parseFloat(valorFrete),
-        pesoKg: pesoKg ? parseFloat(pesoKg) : null,
-        dataVencimento: dataVencimento ? new Date(dataVencimento) : null
-      }
-    });
-
-    const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
-    const driverTokenGerado = crypto.randomBytes(16).toString('hex');
-
-    const coletaAtualizada = await prisma.solicitacaoColeta.update({
-        where: { id: novaSolicitacao.id },
-        data: {
-            numeroEncomenda: numeroEncomendaGerado,
-            driverToken: driverTokenGerado 
+        if (!valorFrete || parseFloat(valorFrete) <= 0) {
+            return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
         }
-    });
 
-    console.log(`BACKEND: Coleta ${novaSolicitacao.id} salva. Nº Encomenda: ${numeroEncomendaGerado}`);
-    res.status(201).json(coletaAtualizada);
+        const novaSolicitacao = await prisma.solicitacaoColeta.create({
+            data: {
+                nomeCliente, emailCliente, enderecoColeta, tipoCarga,
+                cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
+                valorFrete: parseFloat(valorFrete),
+                pesoKg: pesoKg ? parseFloat(pesoKg) : null,
+                dataVencimento: dataVencimento ? new Date(dataVencimento) : null
+            }
+        });
 
-  } catch (error) {
-    console.error("BACKEND: Erro ao salvar coleta:", error);
-    res.status(500).json({ error: "Ocorreu um erro ao processar a solicitação." });
-  }
+        const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
+        const driverTokenGerado = crypto.randomBytes(16).toString('hex');
+
+        const coletaAtualizada = await prisma.solicitacaoColeta.update({
+            where: { id: novaSolicitacao.id },
+            data: {
+                numeroEncomenda: numeroEncomendaGerado,
+                driverToken: driverTokenGerado
+            }
+        });
+
+        console.log(`BACKEND: Coleta ${novaSolicitacao.id} salva. Nº Encomenda: ${numeroEncomendaGerado}`);
+        res.status(201).json(coletaAtualizada);
+
+    } catch (error) {
+        console.error("BACKEND: Erro ao salvar coleta:", error);
+        res.status(500).json({ error: "Ocorreu um erro ao processar a solicitação." });
+    }
 });
 
 
 app.post('/api/rastreamento/remetente', async (req, res) => {
-  try {
-    const { numeroEncomenda, cpfCnpj } = req.body;
-    
-    const coleta = await prisma.solicitacaoColeta.findUnique({
-      where: { numeroEncomenda: numeroEncomenda },
-      include: { historico: { orderBy: { data: 'desc' } } }
-    });
+    try {
+        const { numeroEncomenda, cpfCnpj } = req.body;
 
-    if (!coleta) {
-        return res.status(404).json({ error: "Número da encomenda não encontrado." });
-    }
-    
-    if (coleta.cpfCnpjRemetente !== cpfCnpj) {
-        return res.status(401).json({ error: "O CPF/CNPJ do remetente não corresponde a esta encomenda." });
-    }
+        const coleta = await prisma.solicitacaoColeta.findUnique({
+            where: { numeroEncomenda: numeroEncomenda },
+            include: { historico: { orderBy: { data: 'desc' } } }
+        });
 
-    res.status(200).json(coleta);
-    
-  } catch (error) { 
-    console.error("Erro Rastreio Remetente:", error);
-    res.status(500).json({ error: "Erro no servidor." }); 
-  }
+        if (!coleta) {
+            return res.status(404).json({ error: "Número da encomenda não encontrado." });
+        }
+
+        if (coleta.cpfCnpjRemetente !== cpfCnpj) {
+            return res.status(401).json({ error: "O CPF/CNPJ do remetente não corresponde a esta encomenda." });
+        }
+
+        res.status(200).json(coleta);
+
+    } catch (error) {
+        console.error("Erro Rastreio Remetente:", error);
+        res.status(500).json({ error: "Erro no servidor." });
+    }
 });
 
 app.post('/api/rastreamento/destinatario', async (req, res) => {
@@ -128,59 +122,41 @@ app.post('/api/rastreamento/destinatario', async (req, res) => {
         });
 
         if (!coleta) {
-             return res.status(404).json({ error: "Número da encomenda não encontrado." });
+            return res.status(404).json({ error: "Número da encomenda não encontrado." });
         }
-        
+
         if (coleta.cpfCnpjDestinatario !== cpfCnpj) {
             return res.status(401).json({ error: "O CPF/CNPJ do destinatário não corresponde a esta encomenda." });
         }
-        
+
         res.status(200).json(coleta);
 
-    } catch (error) { 
+    } catch (error) {
         console.error("ERRO DETALHADO NO RASTREIO:", error);
-        res.status(500).json({ error: "Erro no servidor." }); 
+        res.status(500).json({ error: "Erro no servidor." });
     }
 });
 
-app.post('/api/devolucoes/solicitar', async (req, res) => {
-    try {
-        const { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao } = req.body;
-        const novaDevolucao = await prisma.solicitacaoDevolucao.create({
-            data: { nomeCliente, emailCliente, numeroNFOriginal, motivoDevolucao }
-        });
-        await resend.emails.send({
-            from: 'onboarding@resend.dev', 
-            to: emailCliente,
-            subject: 'Confirmação de Solicitação de Devolução',
-            html: `<p>Olá ${nomeCliente},</p><p>Recebemos sua solicitação para devolver a NF ${numeroNFOriginal}.</p><p>O prazo de coleta é de até 3 dias.</p>`
-        });
-        res.status(201).json(novaDevolucao);
-    } catch (error) {
-        console.error("Erro na devolução:", error);
-        res.status(500).json({ error: "Erro ao processar devolução." });
-    }
-});
 
 app.get('/api/fatura/:nf', async (req, res) => {
     try {
         const { nf } = req.params;
-        const coleta = await prisma.solicitacaoColeta.findUnique({ 
-            where: { numeroNotaFiscal: nf } 
+        const coleta = await prisma.solicitacaoColeta.findUnique({
+            where: { numeroNotaFiscal: nf }
         });
         if (!coleta) { return res.status(404).json({ error: "Nota Fiscal não encontrada." }); }
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=fatura_${nf}.pdf`);
         const doc = new PDFDocument({ margin: 50 });
-        doc.pipe(res); 
+        doc.pipe(res);
         doc.fontSize(20).text('Transportes Linhares', { align: 'center' });
         doc.fontSize(10).text('Rua Santo Antônio, 1372, Centro, Ouro Branco', { align: 'center' });
         doc.moveDown(2);
         doc.fontSize(18).text(`FATURA (Demonstração)`, { align: 'center' });
         doc.moveDown();
         doc.fontSize(12)
-           .text(`Nota Fiscal: ${coleta.numeroNotaFiscal}`, { continued: true })
-           .text(`Data Emissão: ${new Date(coleta.dataSolicitacao).toLocaleDateString('pt-BR')}`, { align: 'right' });
+            .text(`Nota Fiscal: ${coleta.numeroNotaFiscal}`, { continued: true })
+            .text(`Data Emissão: ${new Date(coleta.dataSolicitacao).toLocaleDateString('pt-BR')}`, { align: 'right' });
         doc.text(`Cliente: ${coleta.nomeCliente}`);
         doc.text(`Remetente (CPF/CNPJ): ${coleta.cpfCnpjRemetente}`);
         doc.text(`Destinatário (CPF/CNPJ): ${coleta.cpfCnpjDestinatario}`);
@@ -189,8 +165,8 @@ app.get('/api/fatura/:nf', async (req, res) => {
         doc.text(`Endereço de Coleta: ${coleta.enderecoColeta}`);
         doc.moveDown();
         doc.fontSize(16).text(`Valor Total: R$ ${coleta.valorFrete.toFixed(2)}`, { align: 'right' });
-        const vencimento = coleta.dataVencimento 
-            ? new Date(coleta.dataVencimento).toLocaleDateString('pt-BR') 
+        const vencimento = coleta.dataVencimento
+            ? new Date(coleta.dataVencimento).toLocaleDateString('pt-BR')
             : 'A combinar';
         doc.fontSize(12).text(`Data de Vencimento: ${vencimento}`, { align: 'right' });
         doc.moveDown(2);
@@ -248,7 +224,7 @@ app.post('/api/driver/update', async (req, res) => {
         if (coleta.driverToken !== token) {
             return res.status(401).json({ error: "Token de autorização inválido." });
         }
-        
+
         await prisma.$transaction([
             prisma.solicitacaoColeta.update({
                 where: { numeroEncomenda: numeroEncomenda },
@@ -262,20 +238,239 @@ app.post('/api/driver/update', async (req, res) => {
                 }
             })
         ]);
-        
+
         res.status(200).json({ message: "Status atualizado com sucesso!" });
-    
+
     } catch (error) {
         console.error("Erro na atualização do motorista:", error);
         res.status(500).json({ error: "Erro interno." });
     }
 });
 
+app.put('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const novosDadosColeta = req.body;
+    const coletaId = parseInt(id);
+    if (novosDadosColeta.dataVencimento) {
+        novosDadosColeta.dataVencimento = new Date(novosDadosColeta.dataVencimento);
+    } else if (novosDadosColeta.dataVencimento === '') {
+        novosDadosColeta.dataVencimento = null;
+    }
 
 
+    try {
+        const coletaAtualizada = await prisma.solicitacaoColeta.update({
+            where: {
+                id: coletaId,
+            },
+            data: {
+                ...novosDadosColeta,
+            },
+        });
+
+        return res.status(200).json(coletaAtualizada);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao atualizar coleta:', error);
+
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Coleta não encontrada para atualização.' });
+        }
+
+        return res.status(500).json({ error: 'Erro interno ao atualizar a coleta.' });
+    }
+});
+app.delete('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const coletaId = parseInt(id);
+
+    try {
+        const coletaExcluida = await prisma.solicitacaoColeta.delete({
+            where: {
+                id: coletaId,
+            },
+        });
+
+        return res.status(200).json({
+            message: `Coleta #${coletaId} excluída com sucesso.`,
+            id: coletaExcluida.id
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao excluir coleta:', error);
+
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Coleta não encontrada.' });
+        }
+
+        return res.status(500).json({ error: 'Erro interno ao excluir a coleta.' });
+    }
+});
+
+app.get('/rastreamento/publico/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const coleta = await prisma.solicitacaoColeta.findFirst({
+            where: {
+                OR: [
+                    { numeroEncomenda: id },
+                    { numeroNotaFiscal: id }
+                ]
+            },
+            include: {
+                historico: {
+                    orderBy: { data: 'desc' }
+                }
+            }
+        });
+
+        if (!coleta) {
+            return res.status(404).json({ error: 'Coleta não encontrada. Verifique o número.' });
+        }
+        
+        return res.status(200).json({
+            numeroEncomenda: coleta.numeroEncomenda,
+            status: coleta.status,
+            historico: coleta.historico.map(h => ({
+                data: h.data,
+                status: h.status,
+                localizacao: h.localizacao
+            }))
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha no rastreamento público:', error);
+        return res.status(500).json({ error: 'Erro interno ao realizar o rastreamento.' });
+    }
+});
+
+app.post('/api/devolucao/solicitar', async (req, res) => {
+    const { 
+        numeroNFOriginal, 
+        nomeCliente, 
+        emailCliente, 
+        motivoDevolucao 
+    } = req.body;
+
+    if (!numeroNFOriginal || !nomeCliente || !emailCliente) {
+        return res.status(400).json({ error: 'Campos obrigatórios (NF, nome, e-mail) faltando.' });
+    }
+
+    try {
+        const coletaOriginal = await prisma.solicitacaoColeta.findUnique({
+            where: { numeroNotaFiscal: numeroNFOriginal },
+            select: { 
+                id: true, 
+                status: true, 
+                numeroEncomenda: true 
+            }
+        });
+
+        if (!coletaOriginal) {
+            return res.status(404).json({ error: 'Nota Fiscal não encontrada ou não vinculada a uma coleta.' });
+        }
+        
+        if (coletaOriginal.status !== 'CONCLUIDA' && coletaOriginal.status !== 'EM_DEVOLUCAO') {
+             return res.status(400).json({ 
+                 error: `A coleta deve estar CONCLUIDA para solicitar devolução. Status atual: ${coletaOriginal.status}`
+             });
+        }
+        
+        const [solicitacaoDevolucao, atualizacaoColeta] = await prisma.$transaction([
+            prisma.solicitacaoDevolucao.create({
+                data: {
+                    nomeCliente,
+                    emailCliente,
+                    numeroNFOriginal,
+                    motivoDevolucao,
+                }
+            }),
+            prisma.solicitacaoColeta.update({
+                where: { id: coletaOriginal.id },
+                data: {
+                    status: 'EM_DEVOLUCAO',
+                    historico: {
+                        create: {
+                            status: 'EM_DEVOLUCAO',
+                            localizacao: `Devolução solicitada pelo cliente. NF: ${numeroNFOriginal}`,
+                        }
+                    }
+                },
+                select: { numeroEncomenda: true, status: true }
+            })
+        ]);
+        return res.status(200).json({ 
+            message: 'Solicitação de devolução registrada com sucesso. O status da coleta foi atualizado.', 
+            coleta: atualizacaoColeta,
+            solicitacaoId: solicitacaoDevolucao.id
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao solicitar devolução:', error);
+        return res.status(500).json({ error: 'Erro interno ao processar a solicitação de devolução.' });
+    }
+});
+
+app.get('/api/admin/stats', authMiddleware, async (req, res) => {
+    try {
+        const today = new Date();
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+        const coletasMes = await prisma.solicitacaoColeta.count({
+            where: {
+                dataSolicitacao: {
+                    gte: firstDayOfMonth,
+                },
+            },
+        });
+        const contagemStatus = await prisma.solicitacaoColeta.groupBy({
+            by: ['status'],
+            _count: {
+                id: true,
+            },
+        });
+
+        const totalPorStatus = {
+            PENDENTE: 0,
+            COLETADO: 0,
+            EM_TRANSITO: 0,
+            EM_ROTA_ENTREGA: 0,
+            CONCLUIDA: 0,
+            CANCELADA: 0,
+            EM_DEVOLUCAO: 0,
+        };
+
+        contagemStatus.forEach(item => {
+            if (item.status in totalPorStatus) {
+                totalPorStatus[item.status] = item._count.id;
+            }
+        });
+
+        const faturamentoAgregado = await prisma.solicitacaoColeta.aggregate({
+            _sum: {
+                valorFrete: true,
+            },
+            where: {
+                status: 'CONCLUIDA',
+            },
+        });
+
+        const faturamentoTotal = faturamentoAgregado._sum.valorFrete || 0;
+
+        return res.status(200).json({
+            statusCounts: totalPorStatus,
+            faturamentoTotal: faturamentoTotal,
+            coletasMes
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao obter estatísticas:', error);
+        return res.status(500).json({ error: 'Erro interno ao processar as estatísticas.' });
+    }
+});
 app.post('/api/admin/registrar', async (req, res) => {
     const { email, senha, nome } = req.body;
-    const senhaHash = await bcrypt.hash(senha, 10); 
+    const senhaHash = await bcrypt.hash(senha, 10);
     const novoFuncionario = await prisma.funcionario.create({
         data: { email, senha: senhaHash, nome }
     });
@@ -283,7 +478,7 @@ app.post('/api/admin/registrar', async (req, res) => {
 });
 
 app.post('/api/admin/login', async (req, res) => {
-    console.log("BACKEND: Rota /api/admin/login ALCANÇADA."); 
+    console.log("BACKEND: Rota /api/admin/login ALCANÇADA.");
     const { email, senha } = req.body;
 
     try {
@@ -321,7 +516,7 @@ app.post('/api/admin/login', async (req, res) => {
 
 app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
     const { cpfCnpj, nome, email } = req.body;
-    
+
     if (!cpfCnpj) {
         return res.status(400).json({ error: "CPF/CNPJ e senha são obrigatórios." });
     }
@@ -332,7 +527,7 @@ app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
         });
         res.status(201).json(novoCliente);
     } catch (e) {
-        if (e.code === 'P2002') { 
+        if (e.code === 'P2002') {
             return res.status(409).json({ error: "Este CPF/CNPJ já está cadastrado." });
         }
         console.error("Erro ao cadastrar cliente:", e);
@@ -355,13 +550,13 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
 app.get('/api/admin/coletas', async (req, res) => {
     try {
         const { status, search, page = 1 } = req.query;
-        
-        const pageSize = 10; 
+
+        const pageSize = 10;
         const pageNumber = parseInt(page, 10);
         const skip = (pageNumber - 1) * pageSize;
 
         let whereClause = {};
-        
+
         if (status && Object.values(StatusColeta).includes(status)) {
             whereClause.status = status;
         }
@@ -377,8 +572,8 @@ app.get('/api/admin/coletas', async (req, res) => {
             prisma.solicitacaoColeta.findMany({
                 where: whereClause,
                 orderBy: { dataSolicitacao: 'desc' },
-                take: pageSize, 
-                skip: skip      
+                take: pageSize,
+                skip: skip
             }),
             prisma.solicitacaoColeta.count({
                 where: whereClause
@@ -410,11 +605,11 @@ app.get('/api/admin/stats', authMiddleware, async (req, res) => {
         const coletasHoje = await prisma.solicitacaoColeta.count({
             where: { dataSolicitacao: { gte: today, lt: tomorrow } }
         });
-        const devolucoesPendentes = await prisma.solicitacaoDevolucao.count(); 
+        const devolucoesPendentes = await prisma.solicitacaoDevolucao.count();
         const coletasEntregues = await prisma.solicitacaoColeta.count({
             where: { status: 'CONCLUIDA' }
         });
-        
+
         res.status(200).json({
             coletasHoje: coletasHoje,
             devolucoesPendentes: devolucoesPendentes,
@@ -454,7 +649,7 @@ app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) =>
         res.status(201).json(coletaAtualizada);
     } catch (error) {
         console.error("Erro ao adicionar histórico:", error);
-        if (error.code === 'P2025') { 
+        if (error.code === 'P2025') {
             return res.status(404).json({ error: "Nota Fiscal não encontrada." });
         }
         res.status(500).json({ error: "Erro ao atualizar rastreio." });
@@ -462,5 +657,5 @@ app.post('/api/admin/coletas/:nf/historico', authMiddleware, async (req, res) =>
 });
 
 app.listen(PORT, () => {
-  console.log(`Backend esta rodando em http://localhost:${PORT}`);
+    console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });

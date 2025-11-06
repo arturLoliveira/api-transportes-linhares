@@ -64,7 +64,7 @@ model HistoricoRastreio {
   localizacao   String   
 
   solicitacaoId   Int
-  solicitacao     SolicitacaoColeta @relation(fields: [solicitacaoId], references: [id])
+  solicitacao     SolicitacaoColeta @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
 
   @@map("historico_rastreio")
 }
@@ -74,6 +74,7 @@ enum StatusColeta {
   COLETADO        
   EM_TRANSITO     
   EM_ROTA_ENTREGA 
+  EM_DEVOLUCAO
   CONCLUIDA
   CANCELADA
 }
