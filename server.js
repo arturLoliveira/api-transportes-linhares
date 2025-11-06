@@ -661,7 +661,7 @@ app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
 });
 app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+        return res.status(403).json({ error: "Acesso negado. Apenas administrador." });
     }
 
     try {
