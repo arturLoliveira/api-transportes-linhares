@@ -313,7 +313,7 @@ app.delete('/api/admin/coletas/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.get('/rastreamento/publico/:id', async (req, res) => {
+app.get('/api/rastreamento/publico/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const coleta = await prisma.solicitacaoColeta.findFirst({
