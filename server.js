@@ -771,6 +771,7 @@ app.get('/api/admin/devolucoes', authMiddleware, async (req, res) => {
 app.put('/api/admin/devolucoes/:id/status', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { statusProcessamento } = req.body;
+    console.log(statusProcessamento)
     const devolucaoId = parseInt(id);
 
     if (req.user.role !== 'admin') {
