@@ -1377,6 +1377,45 @@ app.post('/api/coletas/solicitar', async (req, res) => {
     }
 });
 
+// --- ROTA PÚBLICA: ENVIAR MENSAGEM DE CONTATO ---
+app.post('/api/contato/enviar-email', async (req, res) => {
+    const { nome, telefone, email, mensagem } = req.body;
+
+    if (!nome || !email || !mensagem) {
+        return res.status(400).json({ error: "Nome, e-mail e mensagem são campos obrigatórios." });
+    }
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: 'Formulário de Contato <Transportes Linhares>', 
+            to: 'arturlinhares2001@gmail.com', 
+            subject: `Nova Mensagem de Contato - Cliente: ${nome}`,
+            reply_to: email, 
+            html: `
+                <p><strong>Nome:</strong> ${nome}</p>
+                <p><strong>Telefone:</strong> ${telefone || 'Não fornecido'}</p>
+                <p><strong>E-mail:</strong> ${email}</p>
+                <p><strong>Mensagem:</strong></p>
+                <p>${mensagem}</p>
+                <br>
+                <p>--- Mensagem enviada pelo formulário do site.</p>
+            `,
+        });
+
+        if (error) {
+            console.error("ERRO RESEND:", error);
+            return res.status(500).json({ error: 'Falha ao enviar e-mail via Resend.' });
+        }
+
+        console.log("E-mail de contato enviado com sucesso. ID:", data.id);
+        return res.status(200).json({ message: 'Mensagem enviada com sucesso!' });
+
+    } catch (error) {
+        console.error('ERRO INTERNO NO CONTATO:', error);
+        return res.status(500).json({ error: 'Erro interno ao processar o envio.' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });
