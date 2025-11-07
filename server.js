@@ -515,6 +515,30 @@ app.post('/api/devolucao/solicitar', async (req, res) => {
                 select: { numeroEncomenda: true, status: true }
             })
         ]);
+        const emailBody = `
+            <p>Olá, ${nomeCliente},</p>
+            <p>Recebemos sua solicitação de devolução com sucesso!</p>
+            <p>Nossa equipe de logística revisará os dados e entrará em contato para agendar o recolhimento.</p>
+            <br>
+            <p><strong>Detalhes da Solicitação:</strong></p>
+            <ul>
+                <li>Nota Fiscal: ${numeroNFOriginal}</li>
+                <li>Status da Coleta: EM DEVOLUÇÃO</li>
+                <li>Motivo: ${motivoDevolucao || 'Não especificado'}</li>
+            </ul>
+            <br>
+            <p>Obrigado pela paciência.</p>
+            <p>Atenciosamente, <br>Equipe Transportes Linhares</p>
+        `;
+
+        await resend.emails.send({
+            from: 'Confirmação de Devolução <transporteslinhares7@gmail.com>', 
+            to: emailCliente, 
+            subject: `Confirmação de Solicitação de Devolução - NF ${numeroNFOriginal}`,
+            html: emailBody,
+        });
+
+
         return res.status(200).json({
             message: 'Solicitação de devolução registrada com sucesso. O status da coleta foi atualizado.',
             coleta: atualizacaoColeta,
@@ -1377,7 +1401,6 @@ app.post('/api/coletas/solicitar', async (req, res) => {
     }
 });
 
-// --- ROTA PÚBLICA: ENVIAR MENSAGEM DE CONTATO ---
 app.post('/api/contato/enviar-email', async (req, res) => {
     const { nome, telefone, email, mensagem } = req.body;
 
@@ -1387,7 +1410,7 @@ app.post('/api/contato/enviar-email', async (req, res) => {
 
     try {
         const { data, error } = await resend.emails.send({
-            from: 'Formulário de Contato <onboarding@resend.dev>', 
+            from: 'Formulário de Contato <transporteslinhares7@gmail.com>', 
             to: 'arturlinhares2001@gmail.com', 
             subject: `Nova Mensagem de Contato - Cliente: ${nome}`,
             reply_to: email, 
