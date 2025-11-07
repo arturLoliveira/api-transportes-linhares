@@ -1085,6 +1085,37 @@ app.put('/api/admin/devolucoes/:nf/rejeitar', authMiddleware, async (req, res) =
         return res.status(500).json({ error: 'Erro interno ao rejeitar devolução.' });
     }
 });
+app.put('/api/admin/devolucoes/:nf/aprovar', authMiddleware, async (req, res) => {
+    const { nf } = req.params;
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        const devolucaoAtualizada = await prisma.solicitacaoDevolucao.update({
+            where: { numeroNFOriginal: nf },
+            data: { 
+                statusProcessamento: 'APROVADA', 
+                motivoRejeicao: null 
+            }
+        });
+        
+        await prisma.solicitacaoColeta.update({
+             where: { numeroNotaFiscal: nf },
+             data: { status: 'EM_DEVOLUCAO' }
+        });
+
+        return res.status(200).json(devolucaoAtualizada);
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao aprovar devolução:', error);
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Solicitação de devolução não encontrada.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao aprovar devolução.' });
+    }
+});
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });
