@@ -12,7 +12,7 @@ const crypto = require('crypto');
 
 const app = express();
 const prisma = new PrismaClient();
-const resend = new Resend('process.env.RESEND_API_KEY');
+const resend = new Resend(process.env.RESEND_API_KEY);
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = 3001;
 
