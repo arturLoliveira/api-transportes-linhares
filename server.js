@@ -532,7 +532,7 @@ app.post('/api/devolucao/solicitar', async (req, res) => {
         `;
 
         await resend.emails.send({
-            from: 'Confirmação de Devolução <transporteslinhares7@gmail.com>', 
+            from: 'Confirmação de Devolução <onboarding@resend.dev>', 
             to: emailCliente, 
             subject: `Confirmação de Solicitação de Devolução - NF ${numeroNFOriginal}`,
             html: emailBody,
@@ -1410,7 +1410,7 @@ app.post('/api/contato/enviar-email', async (req, res) => {
 
     try {
         const { data, error } = await resend.emails.send({
-            from: 'Formulário de Contato <transporteslinhares7@gmail.com>', 
+            from: 'Formulário de Contato <onboarding@resend.dev>', 
             to: 'arturlinhares2001@gmail.com', 
             subject: `Nova Mensagem de Contato - Cliente: ${nome}`,
             reply_to: email, 
