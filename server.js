@@ -1116,6 +1116,39 @@ app.put('/api/admin/devolucoes/:nf/aprovar', authMiddleware, async (req, res) =>
         return res.status(500).json({ error: 'Erro interno ao aprovar devolução.' });
     }
 });
+app.get('/api/user/me', authMiddleware, async (req, res) => {
+    const { id, role, cpfCnpj } = req.user; 
+
+    try {
+        let user;
+        let selectFields = { id: true, nome: true, email: true };
+
+        if (role === 'admin') {
+            user = await prisma.funcionario.findUnique({
+                where: { id: id },
+                select: selectFields,
+            });
+        } else if (role === 'cliente') {
+            user = await prisma.cliente.findUnique({
+                where: { id: id },
+                select: { ...selectFields, cpfCnpj: true },
+            });
+        }
+
+        if (!user) {
+            return res.status(404).json({ error: "Perfil de usuário não encontrado." });
+        }
+
+        return res.status(200).json({
+            ...user,
+            role: role 
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao buscar perfil /api/user/me:', error);
+        return res.status(500).json({ error: 'Erro interno ao buscar perfil.' });
+    }
+});
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });
