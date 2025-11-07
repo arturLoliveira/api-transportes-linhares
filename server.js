@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
 const { PrismaClient, StatusColeta } = require('@prisma/client');
@@ -7,6 +6,7 @@ const { Resend } = require('resend');
 const PDFDocument = require('pdfkit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const fetch = require('node-fetch').default;
 const authMiddleware = require('./authMiddleware');
 const crypto = require('crypto');
 
@@ -21,6 +21,56 @@ const allowedOrigins = [
     process.env.FRONTEND_URL_DEV,
     process.env.FRONTEND_URL_PROD
 ];
+const ASAAS_API_KEY = process.env.NODE_ENV === 'production'
+    ? process.env.ASAAS_API_KEY_PROD
+    : process.env.ASAAS_API_KEY_TESTE;
+
+// URL base da API do Asaas (Sandbox vs. Produção)
+const ASAAS_API_URL = process.env.NODE_ENV === 'production'
+    ? 'https://api.asaas.com/v3'
+    : 'https://sandbox.asaas.com/api/v3';
+
+// FUNÇÃO AUXILIAR PARA BUSCAR OU CRIAR CLIENTE NO ASAAS
+async function getOrCreateAsaasCustomer(coleta) {
+    if (!ASAAS_API_KEY) {
+        throw new Error("ASAAS_API_KEY não configurada.");
+    }
+    const searchUrl = `${ASAAS_API_URL}/customers?cpfCnpj=${coleta.cpfCnpjDestinatario}`;
+    const searchResponse = await fetch(searchUrl, {
+        headers: { 'access_token': ASAAS_API_KEY }
+    });
+
+    const searchData = await searchResponse.json();
+
+    if (searchData.data && searchData.data.length > 0) {
+        // Cliente encontrado
+        return searchData.data[0].id;
+    }
+
+    // 2. Se não encontrou, Criar Novo Cliente no Asaas
+    const customerData = {
+        name: coleta.nomeCliente,
+        email: coleta.emailCliente,
+        cpfCnpj: coleta.cpfCnpjDestinatario,
+    };
+
+    const createResponse = await fetch(`${ASAAS_API_URL}/customers`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'access_token': ASAAS_API_KEY
+        },
+        body: JSON.stringify(customerData)
+    });
+
+    const createData = await createResponse.json();
+
+    if (createResponse.ok) {
+        return createData.id; // Retorna o novo ID do cliente Asaas (cus_...)
+    } else {
+        throw new Error(`Falha ao criar cliente no Asaas: ${createData.errors?.[0]?.description || createData.errors?.message || 'Erro desconhecido.'}`);
+    }
+}
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -38,6 +88,8 @@ app.use(express.json());
 
 
 app.post('/api/coletas/solicitar', async (req, res) => {
+    // IMPORTANTE: Assumimos que getOrCreateAsaasCustomer e as constantes ASAAS foram definidas.
+
     try {
         console.log("BACKEND: Nova solicitação recebida:", req.body);
         const {
@@ -50,25 +102,80 @@ app.post('/api/coletas/solicitar', async (req, res) => {
             return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
         }
 
+        // 1. Cria a Coleta Inicial no DB
         const novaSolicitacao = await prisma.solicitacaoColeta.create({
             data: {
                 nomeCliente, emailCliente, enderecoColeta, tipoCarga,
                 cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
                 valorFrete: parseFloat(valorFrete),
                 pesoKg: pesoKg ? parseFloat(pesoKg) : null,
-                dataVencimento: dataVencimento ? new Date(dataVencimento) : null
+                dataVencimento: dataVencimento ? new Date(dataVencimento) : null,
+                statusPagamento: 'PENDENTE', // Define o status de pagamento
             }
         });
 
         const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
         const driverTokenGerado = crypto.randomBytes(16).toString('hex');
 
+        // --- 2. GERAÇÃO DO BOLETO ASAAS ---
+        try {
+            // Requer a função auxiliar (getOrCreateAsaasCustomer) e constantes (ASAAS_API_KEY, ASAAS_API_URL)
+            const customerIdAsaas = await getOrCreateAsaasCustomer(novaSolicitacao);
+            const dataVencimentoAsaas = novaSolicitacao.dataVencimento
+                ? new Date(novaSolicitacao.dataVencimento).toISOString().split('T')[0]
+                : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            const asaasResponse = await fetch(`${ASAAS_API_URL}/payments`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'access_token': ASAAS_API_KEY
+                },
+                body: JSON.stringify({
+                    customer: customerIdAsaas,
+                    billingType: 'BOLETO',
+                    value: novaSolicitacao.valorFrete,
+                    dueDate: dataVencimentoAsaas,
+                    description: `Serviço de Frete NF ${numeroNotaFiscal}`,
+                })
+            });
+
+            const paymentData = await asaasResponse.json();
+
+            if (!asaasResponse.ok || paymentData.errors) {
+                // Loga o erro, mas não aborta a criação da coleta, apenas a marca como sem boleto
+                console.error("ERRO ASAAS: Falha ao gerar boleto. NF:", numeroNotaFiscal, paymentData.errors);
+            } else {
+                // 3. Atualiza o DB com o Link do Boleto
+                await prisma.solicitacaoColeta.update({
+                    where: { id: novaSolicitacao.id },
+                    data: {
+                        boletoUrl: paymentData.bankSlipUrl,
+                        boletoLinhaDigitavel: paymentData.bankSlipBarcode,
+                        boletoStatusPagamento: 'AGUARDANDO_PAGAMENTO'
+                    }
+                });
+            }
+        } catch (asaasError) {
+            console.error("ERRO ASAAS CATCH:", asaasError);
+        }
+        // --- FIM DA GERAÇÃO DO BOLETO ---
+
+        // 4. Atualiza a Coleta com Encomenda/Token e Histórico (Final)
         const coletaAtualizada = await prisma.solicitacaoColeta.update({
             where: { id: novaSolicitacao.id },
             data: {
                 numeroEncomenda: numeroEncomendaGerado,
-                driverToken: driverTokenGerado
-            }
+                driverToken: driverTokenGerado,
+                historico: {
+                    create: [{
+                        status: 'PENDENTE',
+                        localizacao: 'Solicitação recebida, aguardando pagamento/coleta.'
+                    }]
+                }
+            },
+            // Incluir o boletoUrl para que o frontend tenha o link na resposta
+            select: { id: true, numeroEncomenda: true, boletoUrl: true, statusPagamento: true }
         });
 
         console.log(`BACKEND: Coleta ${novaSolicitacao.id} salva. Nº Encomenda: ${numeroEncomendaGerado}`);
@@ -76,6 +183,9 @@ app.post('/api/coletas/solicitar', async (req, res) => {
 
     } catch (error) {
         console.error("BACKEND: Erro ao salvar coleta:", error);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ error: 'Nota Fiscal já cadastrada. ' });
+        }
         res.status(500).json({ error: "Ocorreu um erro ao processar a solicitação." });
     }
 });
@@ -683,6 +793,7 @@ app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Erro interno ao buscar clientes." });
     }
 });
+
 app.post('/api/cliente/login', async (req, res) => {
     const { cpfCnpj, senha } = req.body;
     const JWT_SECRET = process.env.JWT_SECRET;
@@ -1030,8 +1141,22 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
                     { cpfCnpjDestinatario: clienteCpfCnpj }
                 ]
             },
-            include: {
+            select: {
+                id: true,
+                numeroEncomenda: true,
+                numeroNotaFiscal: true,
+                status: true,
+                dataSolicitacao: true,
+                valorFrete: true,
+                boletoUrl: true,
+                statusPagamento: true,
                 historico: {
+                    select: {
+                        id: true,
+                        data: true,
+                        status: true,
+                        localizacao: true
+                    },
                     orderBy: { data: 'desc' },
                 }
             }
@@ -1047,7 +1172,7 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
                 motivoRejeicaoDevolucao: devolucao?.motivoRejeicao || null,
             };
         }));
-        
+
         return res.status(200).json(coletasComDevolucao);
 
     } catch (error) {
@@ -1069,10 +1194,10 @@ app.put('/api/admin/devolucoes/:nf/rejeitar', authMiddleware, async (req, res) =
 
     try {
         const devolucaoAtualizada = await prisma.solicitacaoDevolucao.update({
-            where: { numeroNFOriginal: nf }, 
-            data: { 
-                statusProcessamento: 'REJEITADA', 
-                motivoRejeicao: motivoRejeicao 
+            where: { numeroNFOriginal: nf },
+            data: {
+                statusProcessamento: 'REJEITADA',
+                motivoRejeicao: motivoRejeicao
             }
         });
 
@@ -1096,15 +1221,15 @@ app.put('/api/admin/devolucoes/:nf/aprovar', authMiddleware, async (req, res) =>
     try {
         const devolucaoAtualizada = await prisma.solicitacaoDevolucao.update({
             where: { numeroNFOriginal: nf },
-            data: { 
-                statusProcessamento: 'APROVADA', 
-                motivoRejeicao: null 
+            data: {
+                statusProcessamento: 'APROVADA',
+                motivoRejeicao: null
             }
         });
-        
+
         await prisma.solicitacaoColeta.update({
-             where: { numeroNotaFiscal: nf },
-             data: { status: 'EM_DEVOLUCAO' }
+            where: { numeroNotaFiscal: nf },
+            data: { status: 'EM_DEVOLUCAO' }
         });
 
         return res.status(200).json(devolucaoAtualizada);
@@ -1118,7 +1243,7 @@ app.put('/api/admin/devolucoes/:nf/aprovar', authMiddleware, async (req, res) =>
     }
 });
 app.get('/api/user/me', authMiddleware, async (req, res) => {
-    const { id, role, cpfCnpj } = req.user; 
+    const { id, role, cpfCnpj } = req.user;
 
     try {
         let user;
@@ -1142,7 +1267,7 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
 
         return res.status(200).json({
             ...user,
-            role: role 
+            role: role
         });
 
     } catch (error) {
@@ -1152,94 +1277,105 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
 });
 
 
-
-// Adicione esta rota na seção de rotas protegidas por Admin
-
-// Chave secreta da API do Asaas (DEVE ser configurada como variável de ambiente!)
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY; 
-const ASAAS_API_URL = process.env.NODE_ENV === 'production' 
-    ? 'https://api.asaas.com/v3'
-    : 'https://sandbox.asaas.com/api/v3'; // Use sandbox para testes
-
-app.post('/api/admin/faturas/:nf/gerar-boleto', authMiddleware, async (req, res) => {
-    const { nf } = req.params;
-
-    if (req.user.role !== 'admin') {
-        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
-    }
-
+app.post('/api/coletas/solicitar', async (req, res) => {
     try {
-        // 1. Busque a coleta e o cliente
-        const coleta = await prisma.solicitacaoColeta.findUnique({
-            where: { numeroNotaFiscal: nf },
-            select: { 
-                id: true, 
-                valorFrete: true, 
-                dataVencimento: true, 
-                nomeCliente: true, 
-                emailCliente: true, 
-                cpfCnpjDestinatario: true // Usar o destinatário como sacado
-            }
-        });
+        console.log("BACKEND: Nova solicitação recebida:", req.body);
+        const {
+            nomeCliente, emailCliente, enderecoColeta, tipoCarga,
+            cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
+            valorFrete, pesoKg, dataVencimento
+        } = req.body;
 
-        if (!coleta) {
-            return res.status(404).json({ error: "Nota Fiscal não encontrada." });
+        if (!valorFrete || parseFloat(valorFrete) <= 0) {
+            return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
         }
-        
-        // 2. Formate a data de vencimento (Formato Asaas: AAAA-MM-DD)
-        const dataVencimentoAsaas = coleta.dataVencimento 
-            ? new Date(coleta.dataVencimento).toISOString().split('T')[0]
-            : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 5 dias por padrão
-        
-        // 3. Crie o cliente no Asaas (ou busque o ID dele se já existir - processo simplificado abaixo)
-        // OBS: Na prática, você precisa do customerId do Asaas. Vamos simular.
-        const customerIdAsaas = 'cus_XXXXXXXXXXXX'; // ID do cliente no Asaas
-        
-        // 4. CHAME A API DO ASAAS PARA GERAR O PAGAMENTO/BOLETO
-        const asaasResponse = await fetch(`${ASAAS_API_URL}/payments`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'access_token': ASAAS_API_KEY // Chave do Asaas
-            },
-            body: JSON.stringify({
-                customer: customerIdAsaas, // ID do cliente Asaas
-                billingType: 'BOLETO',
-                value: coleta.valorFrete,
-                dueDate: dataVencimentoAsaas,
-                description: `Serviço de Frete NF ${nf}`,
-            })
-        });
-        
-        const paymentData = await asaasResponse.json();
 
-        if (!asaasResponse.ok || paymentData.errors) {
-            console.error("ERRO ASAAS:", paymentData);
-            return res.status(500).json({ error: `Falha ao gerar boleto no Gateway: ${paymentData.errors?.[0]?.description || 'Erro desconhecido.'}` });
-        }
-        
-        // 5. ATUALIZE A COLETA COM OS DADOS DO BOLETO
-        await prisma.solicitacaoColeta.update({
-            where: { id: coleta.id },
+        // 1. Cria a Coleta Inicial no DB
+        const novaSolicitacao = await prisma.solicitacaoColeta.create({
             data: {
+                nomeCliente, emailCliente, enderecoColeta, tipoCarga,
+                cpfCnpjRemetente, cpfCnpjDestinatario, numeroNotaFiscal,
+                valorFrete: parseFloat(valorFrete),
+                pesoKg: pesoKg ? parseFloat(pesoKg) : null,
+                dataVencimento: dataVencimento ? new Date(dataVencimento) : null,
                 statusPagamento: 'PENDENTE',
-                boletoUrl: paymentData.bankSlipUrl,          // Link para visualização/impressão
-                boletoLinhaDigitavel: paymentData.bankSlipBarcode, 
-                boletoStatusPagamento: 'AGUARDANDO_PAGAMENTO'
             }
         });
 
-        return res.status(200).json({ 
-            message: "Boleto gerado e salvo.", 
-            boletoUrl: paymentData.bankSlipUrl 
+        const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
+        const driverTokenGerado = crypto.randomBytes(16).toString('hex');
+
+        // --- 2. GERAÇÃO DO BOLETO ASAAS ---
+        let boletoUrl = null;
+        let boletoLinhaDigitavel = null;
+        let boletoStatusPagamento = 'PENDENTE';
+
+        try {
+            const customerIdAsaas = await getOrCreateAsaasCustomer(novaSolicitacao);
+            const dataVencimentoAsaas = novaSolicitacao.dataVencimento
+                ? new Date(novaSolicitacao.dataVencimento).toISOString().split('T')[0]
+                : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            const asaasResponse = await fetch(`${ASAAS_API_URL}/payments`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'access_token': ASAAS_API_KEY
+                },
+                body: JSON.stringify({
+                    customer: customerIdAsaas,
+                    billingType: 'BOLETO',
+                    value: novaSolicitacao.valorFrete,
+                    dueDate: dataVencimentoAsaas,
+                    description: `Serviço de Frete NF ${numeroNotaFiscal}`,
+                })
+            });
+
+            const paymentData = await asaasResponse.json();
+
+            if (!asaasResponse.ok || paymentData.errors) {
+                console.error("ERRO ASAAS: Falha ao gerar boleto. NF:", numeroNotaFiscal, paymentData.errors);
+            } else {
+                boletoUrl = paymentData.bankSlipUrl;
+                boletoLinhaDigitavel = paymentData.bankSlipBarcode;
+                boletoStatusPagamento = 'AGUARDANDO_PAGAMENTO';
+            }
+        } catch (asaasError) {
+            console.error("ERRO ASAAS CATCH:", asaasError.message);
+        }
+        // --- FIM DA GERAÇÃO DO BOLETO ---
+
+        // 4. Atualiza a Coleta com Encomenda/Token, Histórico e Dados do Boleto
+        const coletaAtualizada = await prisma.solicitacaoColeta.update({
+            where: { id: novaSolicitacao.id },
+            data: {
+                numeroEncomenda: numeroEncomendaGerado,
+                driverToken: driverTokenGerado,
+                boletoUrl: boletoUrl,
+                boletoLinhaDigitavel: boletoLinhaDigitavel,
+                boletoStatusPagamento: boletoStatusPagamento,
+                historico: {
+                    create: [{
+                        status: 'PENDENTE',
+                        localizacao: 'Solicitação recebida, aguardando pagamento/coleta.'
+                    }]
+                }
+            },
+            // Incluir o boletoUrl na resposta
+            select: { id: true, numeroEncomenda: true, boletoUrl: true, statusPagamento: true }
         });
+
+        console.log(`BACKEND: Coleta ${novaSolicitacao.id} salva. Nº Encomenda: ${numeroEncomendaGerado}`);
+        res.status(201).json(coletaAtualizada);
 
     } catch (error) {
-        console.error('ERRO INTERNO NA GERAÇÃO DE BOLETO:', error);
-        return res.status(500).json({ error: 'Erro interno ao gerar o boleto.' });
+        console.error("BACKEND: Erro ao salvar coleta:", error);
+        if (error.code === 'P2002') {
+            return res.status(409).json({ error: 'Nota Fiscal já cadastrada. ' });
+        }
+        res.status(500).json({ error: "Ocorreu um erro ao processar a solicitação." });
     }
 });
-
 
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);

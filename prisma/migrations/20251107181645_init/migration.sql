@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "StatusColeta" AS ENUM ('PENDENTE', 'COLETADO', 'EM_TRANSITO', 'EM_ROTA_ENTREGA', 'CONCLUIDA', 'CANCELADA');
+CREATE TYPE "StatusColeta" AS ENUM ('PENDENTE', 'COLETADO', 'EM_TRANSITO', 'EM_ROTA_ENTREGA', 'CONCLUIDA', 'CANCELADA', 'EM_DEVOLUCAO');
 
 -- CreateTable
 CREATE TABLE "solicitacoes_coleta" (
@@ -33,6 +33,8 @@ CREATE TABLE "solicitacoes_devolucao" (
     "numeroNFOriginal" TEXT NOT NULL,
     "motivoDevolucao" TEXT,
     "dataSolicitacao" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "statusProcessamento" TEXT,
+    "motivoRejeicao" TEXT,
 
     CONSTRAINT "solicitacoes_devolucao_pkey" PRIMARY KEY ("id")
 );
@@ -51,6 +53,7 @@ CREATE TABLE "Funcionario" (
 CREATE TABLE "clientes" (
     "id" SERIAL NOT NULL,
     "cpfCnpj" TEXT NOT NULL,
+    "senha" TEXT NOT NULL,
     "nome" TEXT,
     "email" TEXT,
 
@@ -84,4 +87,4 @@ CREATE UNIQUE INDEX "Funcionario_email_key" ON "Funcionario"("email");
 CREATE UNIQUE INDEX "clientes_cpfCnpj_key" ON "clientes"("cpfCnpj");
 
 -- AddForeignKey
-ALTER TABLE "historico_rastreio" ADD CONSTRAINT "historico_rastreio_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes_coleta"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "historico_rastreio" ADD CONSTRAINT "historico_rastreio_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes_coleta"("id") ON DELETE CASCADE ON UPDATE CASCADE;

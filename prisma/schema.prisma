@@ -23,6 +23,7 @@ model SolicitacaoColeta {
   valorFrete         Float    
   pesoKg             Float?   
   dataVencimento     DateTime?
+  statusPagamento       StatusPagamento @default(PENDENTE)
   boletoUrl             String?  
   boletoLinhaDigitavel  String?  
   boletoStatusPagamento String?
@@ -80,4 +81,9 @@ enum StatusColeta {
   CONCLUIDA
   CANCELADA
   EM_DEVOLUCAO
+}
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  ATRASADO
 }
