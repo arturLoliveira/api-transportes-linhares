@@ -20,6 +20,7 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "node-fetch": "^3.3.2",
     "pdfkit": "^0.17.2",
     "resend": "^6.4.0"
   },

@@ -1150,6 +1150,97 @@ app.get('/api/user/me', authMiddleware, async (req, res) => {
         return res.status(500).json({ error: 'Erro interno ao buscar perfil.' });
     }
 });
+
+
+
+// Adicione esta rota na seção de rotas protegidas por Admin
+
+// Chave secreta da API do Asaas (DEVE ser configurada como variável de ambiente!)
+const ASAAS_API_KEY = process.env.ASAAS_API_KEY; 
+const ASAAS_API_URL = process.env.NODE_ENV === 'production' 
+    ? 'https://api.asaas.com/v3'
+    : 'https://sandbox.asaas.com/api/v3'; // Use sandbox para testes
+
+app.post('/api/admin/faturas/:nf/gerar-boleto', authMiddleware, async (req, res) => {
+    const { nf } = req.params;
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        // 1. Busque a coleta e o cliente
+        const coleta = await prisma.solicitacaoColeta.findUnique({
+            where: { numeroNotaFiscal: nf },
+            select: { 
+                id: true, 
+                valorFrete: true, 
+                dataVencimento: true, 
+                nomeCliente: true, 
+                emailCliente: true, 
+                cpfCnpjDestinatario: true // Usar o destinatário como sacado
+            }
+        });
+
+        if (!coleta) {
+            return res.status(404).json({ error: "Nota Fiscal não encontrada." });
+        }
+        
+        // 2. Formate a data de vencimento (Formato Asaas: AAAA-MM-DD)
+        const dataVencimentoAsaas = coleta.dataVencimento 
+            ? new Date(coleta.dataVencimento).toISOString().split('T')[0]
+            : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 5 dias por padrão
+        
+        // 3. Crie o cliente no Asaas (ou busque o ID dele se já existir - processo simplificado abaixo)
+        // OBS: Na prática, você precisa do customerId do Asaas. Vamos simular.
+        const customerIdAsaas = 'cus_XXXXXXXXXXXX'; // ID do cliente no Asaas
+        
+        // 4. CHAME A API DO ASAAS PARA GERAR O PAGAMENTO/BOLETO
+        const asaasResponse = await fetch(`${ASAAS_API_URL}/payments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'access_token': ASAAS_API_KEY // Chave do Asaas
+            },
+            body: JSON.stringify({
+                customer: customerIdAsaas, // ID do cliente Asaas
+                billingType: 'BOLETO',
+                value: coleta.valorFrete,
+                dueDate: dataVencimentoAsaas,
+                description: `Serviço de Frete NF ${nf}`,
+            })
+        });
+        
+        const paymentData = await asaasResponse.json();
+
+        if (!asaasResponse.ok || paymentData.errors) {
+            console.error("ERRO ASAAS:", paymentData);
+            return res.status(500).json({ error: `Falha ao gerar boleto no Gateway: ${paymentData.errors?.[0]?.description || 'Erro desconhecido.'}` });
+        }
+        
+        // 5. ATUALIZE A COLETA COM OS DADOS DO BOLETO
+        await prisma.solicitacaoColeta.update({
+            where: { id: coleta.id },
+            data: {
+                statusPagamento: 'PENDENTE',
+                boletoUrl: paymentData.bankSlipUrl,          // Link para visualização/impressão
+                boletoLinhaDigitavel: paymentData.bankSlipBarcode, 
+                boletoStatusPagamento: 'AGUARDANDO_PAGAMENTO'
+            }
+        });
+
+        return res.status(200).json({ 
+            message: "Boleto gerado e salvo.", 
+            boletoUrl: paymentData.bankSlipUrl 
+        });
+
+    } catch (error) {
+        console.error('ERRO INTERNO NA GERAÇÃO DE BOLETO:', error);
+        return res.status(500).json({ error: 'Erro interno ao gerar o boleto.' });
+    }
+});
+
+
 app.listen(PORT, () => {
     console.log(`Backend esta rodando em http://localhost:${PORT}`);
 });
