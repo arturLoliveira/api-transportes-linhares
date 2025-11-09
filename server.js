@@ -853,7 +853,7 @@ app.put('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
         const clienteAtualizado = await prisma.cliente.update({
             where: { id: clienteId },
             data: updateData,
-            select: {  nome: true, email: true, cpfCnpj: true },
+            select: { id: true, nome: true, email: true, cpfCnpj: true },
         });
 
         return res.status(200).json(clienteAtualizado);
@@ -1187,6 +1187,7 @@ app.get('/api/admin/clientes', authMiddleware, async (req, res) => {
     try {
         const clientes = await prisma.cliente.findMany({
             select: {
+                id: true,
                 cpfCnpj: true,
                 nome: true,
                 email: true,
