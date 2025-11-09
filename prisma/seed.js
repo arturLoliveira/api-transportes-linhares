@@ -84,8 +84,6 @@ async function main() {
     console.log("Funcionário administrador criado/verificado:");
     console.log(admin);
 
-    // --- 2. Limpeza das Coletas Antigas ---
-    // A ordem é importante por causa das chaves estrangeiras
     console.log('Limpando tabelas de coletas/históricos...');
     await prisma.historicoRastreio.deleteMany({});
     await prisma.solicitacaoColeta.deleteMany({});
