@@ -853,7 +853,7 @@ app.put('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
         const clienteAtualizado = await prisma.cliente.update({
             where: { id: clienteId },
             data: updateData,
-            select: { id: true, nome: true, email: true, cpfCnpj: true },
+            select: {  nome: true, email: true, cpfCnpj: true },
         });
 
         return res.status(200).json(clienteAtualizado);
