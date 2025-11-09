@@ -16,6 +16,17 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = 3001;
 
+const nodemailer = require('nodemailer');
+const { v4: uuidv4 } = require('uuid');
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail', 
+    auth: {
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASS, 
+    },
+});
+
 
 const allowedOrigins = [
     process.env.FRONTEND_URL_DEV,
@@ -25,12 +36,10 @@ const ASAAS_API_KEY = process.env.NODE_ENV === 'production'
     ? process.env.ASAAS_API_KEY_PROD
     : process.env.ASAAS_API_KEY_TESTE;
 
-// URL base da API do Asaas (Sandbox vs. Produção)
 const ASAAS_API_URL = process.env.NODE_ENV === 'production'
     ? 'https://api.asaas.com/v3'
     : 'https://sandbox.asaas.com/api/v3';
 
-// FUNÇÃO AUXILIAR PARA BUSCAR OU CRIAR CLIENTE NO ASAAS
 async function getOrCreateAsaasCustomer(coleta) {
     if (!ASAAS_API_KEY) {
         throw new Error("ASAAS_API_KEY não configurada.");
@@ -43,11 +52,9 @@ async function getOrCreateAsaasCustomer(coleta) {
     const searchData = await searchResponse.json();
 
     if (searchData.data && searchData.data.length > 0) {
-        // Cliente encontrado
         return searchData.data[0].id;
     }
 
-    // 2. Se não encontrou, Criar Novo Cliente no Asaas
     const customerData = {
         name: coleta.nomeCliente,
         email: coleta.emailCliente,
@@ -66,7 +73,7 @@ async function getOrCreateAsaasCustomer(coleta) {
     const createData = await createResponse.json();
 
     if (createResponse.ok) {
-        return createData.id; // Retorna o novo ID do cliente Asaas (cus_...)
+        return createData.id; 
     } else {
         throw new Error(`Falha ao criar cliente no Asaas: ${createData.errors?.[0]?.description || createData.errors?.message || 'Erro desconhecido.'}`);
     }
@@ -88,7 +95,6 @@ app.use(express.json());
 
 
 app.post('/api/coletas/solicitar', async (req, res) => {
-    // IMPORTANTE: Assumimos que getOrCreateAsaasCustomer e as constantes ASAAS foram definidas.
 
     try {
         console.log("BACKEND: Nova solicitação recebida:", req.body);
@@ -102,7 +108,6 @@ app.post('/api/coletas/solicitar', async (req, res) => {
             return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
         }
 
-        // 1. Cria a Coleta Inicial no DB
         const novaSolicitacao = await prisma.solicitacaoColeta.create({
             data: {
                 nomeCliente, emailCliente, enderecoColeta, tipoCarga,
@@ -110,16 +115,14 @@ app.post('/api/coletas/solicitar', async (req, res) => {
                 valorFrete: parseFloat(valorFrete),
                 pesoKg: pesoKg ? parseFloat(pesoKg) : null,
                 dataVencimento: dataVencimento ? new Date(dataVencimento) : null,
-                statusPagamento: 'PENDENTE', // Define o status de pagamento
+                statusPagamento: 'PENDENTE', 
             }
         });
 
         const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
         const driverTokenGerado = crypto.randomBytes(16).toString('hex');
 
-        // --- 2. GERAÇÃO DO BOLETO ASAAS ---
         try {
-            // Requer a função auxiliar (getOrCreateAsaasCustomer) e constantes (ASAAS_API_KEY, ASAAS_API_URL)
             const customerIdAsaas = await getOrCreateAsaasCustomer(novaSolicitacao);
             const dataVencimentoAsaas = novaSolicitacao.dataVencimento
                 ? new Date(novaSolicitacao.dataVencimento).toISOString().split('T')[0]
@@ -143,10 +146,8 @@ app.post('/api/coletas/solicitar', async (req, res) => {
             const paymentData = await asaasResponse.json();
 
             if (!asaasResponse.ok || paymentData.errors) {
-                // Loga o erro, mas não aborta a criação da coleta, apenas a marca como sem boleto
                 console.error("ERRO ASAAS: Falha ao gerar boleto. NF:", numeroNotaFiscal, paymentData.errors);
             } else {
-                // 3. Atualiza o DB com o Link do Boleto
                 await prisma.solicitacaoColeta.update({
                     where: { id: novaSolicitacao.id },
                     data: {
@@ -159,9 +160,7 @@ app.post('/api/coletas/solicitar', async (req, res) => {
         } catch (asaasError) {
             console.error("ERRO ASAAS CATCH:", asaasError);
         }
-        // --- FIM DA GERAÇÃO DO BOLETO ---
 
-        // 4. Atualiza a Coleta com Encomenda/Token e Histórico (Final)
         const coletaAtualizada = await prisma.solicitacaoColeta.update({
             where: { id: novaSolicitacao.id },
             data: {
@@ -174,7 +173,6 @@ app.post('/api/coletas/solicitar', async (req, res) => {
                     }]
                 }
             },
-            // Incluir o boletoUrl para que o frontend tenha o link na resposta
             select: { id: true, numeroEncomenda: true, boletoUrl: true, statusPagamento: true }
         });
 
@@ -314,7 +312,7 @@ app.get('/api/etiqueta/:nf', async (req, res) => {
 
 
 
-app.post('/api/driver/update', async (req, res) => {
+app.post('/api/driver/update', authMiddleware, async (req, res) => {
     const { numeroEncomenda, token, status, localizacao } = req.body;
 
     if (!numeroEncomenda || !token || !status || !localizacao) {
@@ -532,8 +530,8 @@ app.post('/api/devolucao/solicitar', async (req, res) => {
         `;
 
         await resend.emails.send({
-            from: 'Confirmação de Devolução <onboarding@resend.dev>', 
-            to: emailCliente, 
+            from: 'Confirmação de Devolução <onboarding@resend.dev>',
+            to: emailCliente,
             subject: `Confirmação de Solicitação de Devolução - NF ${numeroNFOriginal}`,
             html: emailBody,
         });
@@ -773,26 +771,6 @@ app.delete('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/admin/clientes/registrar', authMiddleware, async (req, res) => {
-    const { cpfCnpj, nome, email } = req.body;
-
-    if (!cpfCnpj) {
-        return res.status(400).json({ error: "CPF/CNPJ e senha são obrigatórios." });
-    }
-
-    try {
-        const novoCliente = await prisma.cliente.create({
-            data: { cpfCnpj, nome, email }
-        });
-        res.status(201).json(novoCliente);
-    } catch (e) {
-        if (e.code === 'P2002') {
-            return res.status(409).json({ error: "Este CPF/CNPJ já está cadastrado." });
-        }
-        console.error("Erro ao cadastrar cliente:", e);
-        res.status(500).json({ error: "Erro ao cadastrar cliente." });
-    }
-});
 app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({ error: "Acesso negado. Apenas administrador." });
@@ -1205,6 +1183,63 @@ app.get('/api/cliente/minhas-coletas', authMiddleware, async (req, res) => {
     }
 });
 
+app.get('/api/admin/clientes', authMiddleware, async (req, res) => {
+    try {
+        const clientes = await prisma.cliente.findMany({
+            select: {
+                cpfCnpj: true,
+                nome: true,
+                email: true,
+            },
+            orderBy: {
+                id: 'desc' 
+            }
+        });
+        res.json(clientes);
+    } catch (error) {
+        console.error("Erro ao buscar clientes:", error);
+        res.status(500).json({ error: "Erro interno do servidor." });
+    }
+});
+
+app.get('/api/admin/clientes/:cpfCnpj/boletos', authMiddleware, async (req, res) => {
+    const { cpfCnpj } = req.params;
+
+    try {
+        const coletas = await prisma.solicitacaoColeta.findMany({
+            where: {
+                cpfCnpjDestinatario: cpfCnpj
+            },
+            select: {
+                id: true,
+                numeroNotaFiscal: true,
+                valorFrete: true,
+                dataVencimento: true,
+                statusPagamento: true,
+                boletoUrl: true,
+                boletoLinhaDigitavel: true,
+            }
+        });
+
+        const boletosFormatados = coletas.map(coleta => ({
+            id: coleta.id,
+            numeroNotaFiscal: coleta.numeroNotaFiscal,
+            valor: coleta.valorFrete, 
+            dataVencimento: coleta.dataVencimento ? coleta.dataVencimento.toISOString().split('T')[0] : null,
+            status: coleta.statusPagamento, 
+            urlBoleto: coleta.boletoUrl, 
+            linhaDigitavel: coleta.boletoLinhaDigitavel, 
+        }));
+
+        return res.json(boletosFormatados);
+    } catch (error) {
+        console.error("Erro ao buscar boletos para admin:", error);
+        return res.status(500).json({ error: "Erro interno ao buscar boletos." });
+    }
+});
+
+
+
 app.put('/api/admin/devolucoes/:nf/rejeitar', authMiddleware, async (req, res) => {
     const { nf } = req.params;
     const { motivoRejeicao } = req.body;
@@ -1410,10 +1445,10 @@ app.post('/api/contato/enviar-email', async (req, res) => {
 
     try {
         const { data, error } = await resend.emails.send({
-            from: 'Formulário de Contato <onboarding@resend.dev>', 
-            to: 'arturlinhares2001@gmail.com', 
+            from: 'Formulário de Contato <onboarding@resend.dev>',
+            to: 'arturlinhares2001@gmail.com',
             subject: `Nova Mensagem de Contato - Cliente: ${nome}`,
-            reply_to: email, 
+            reply_to: email,
             html: `
                 <p><strong>Nome:</strong> ${nome}</p>
                 <p><strong>Telefone:</strong> ${telefone || 'Não fornecido'}</p>
@@ -1436,6 +1471,104 @@ app.post('/api/contato/enviar-email', async (req, res) => {
     } catch (error) {
         console.error('ERRO INTERNO NO CONTATO:', error);
         return res.status(500).json({ error: 'Erro interno ao processar o envio.' });
+    }
+});
+app.post('/api/clientes/solicitar-recuperacao', async (req, res) => {
+    const { email, cpfCnpj } = req.body;
+
+    if (!email || !cpfCnpj) {
+        return res.status(400).json({ error: "E-mail e CPF/CNPJ são obrigatórios." });
+    }
+
+    try {
+        const cliente = await prisma.cliente.findFirst({
+            where: {
+                cpfCnpj: cpfCnpj,
+                email: email 
+            }
+        });
+
+        if (!cliente) {
+            return res.status(200).json({ message: "Se o usuário existir, o código foi enviado." });
+        }
+
+        const token = uuidv4(); 
+        const expiresAt = new Date(Date.now() + 3600000); 
+
+        await prisma.passwordResetToken.create({
+            data: {
+                token: token,
+                expiresAt: expiresAt,
+                clienteCpfCnpj: cliente.cpfCnpj
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: cliente.email,
+            subject: 'Redefinição de Senha - Transportes Linhares',
+            html: `
+                <p>Você solicitou a redefinição de senha.</p>
+                <p>Seu código de recuperação é: <strong>${token}</strong></p>
+                <p>Este código expira em 1 hora.</p>
+                <p>Ignore este e-mail se você não solicitou a redefinição.</p>
+            `,
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ message: "Código de recuperação enviado para o seu e-mail." });
+
+    } catch (error) {
+        console.error("Erro ao enviar e-mail:", error);
+        res.status(500).json({ error: "Erro ao processar sua solicitação. Verifique as configurações de e-mail." });
+    }
+});
+
+app.post('/api/clientes/redefinir-senha', async (req, res) => {
+    const { email, token, novaSenha } = req.body;
+
+    if (!email || !token || !novaSenha) {
+        return res.status(400).json({ error: "E-mail, código e nova senha são obrigatórios." });
+    }
+
+    try {
+        const resetToken = await prisma.passwordResetToken.findFirst({
+            where: {
+                token: token,
+                expiresAt: {
+                    gt: new Date() 
+                }
+            }
+        });
+
+        if (!resetToken) {
+            return res.status(400).json({ error: "Código inválido ou expirado. Tente solicitar um novo código." });
+        }
+        
+        const cliente = await prisma.cliente.findUnique({
+            where: { email: email }
+        });
+
+        if (!cliente || cliente.cpfCnpj !== resetToken.clienteCpfCnpj) {
+            return res.status(400).json({ error: "Dados de usuário incompatíveis com o código." });
+        }
+
+        const senhaHash = await bcrypt.hash(novaSenha, 10);
+        await prisma.cliente.update({
+            where: { id: cliente.id },
+            data: { senha: senhaHash }
+        });
+
+        await prisma.passwordResetToken.deleteMany({
+            where: { clienteCpfCnpj: cliente.cpfCnpj }
+        });
+
+        res.status(200).json({ message: "Senha redefinida com sucesso. Você pode fazer login agora." });
+
+    } catch (error) {
+        console.error("Erro na redefinição de senha:", error);
+        res.status(500).json({ error: "Erro interno do servidor." });
     }
 });
 

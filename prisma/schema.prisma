@@ -16,6 +16,7 @@ model SolicitacaoColeta {
   dataSolicitacao  DateTime @default(now())
   status           StatusColeta @default(PENDENTE)
   numeroEncomenda String? @unique
+  destinatario          Cliente   @relation("RemetenteColetas", fields: [cpfCnpjDestinatario], references: [cpfCnpj])
 
   cpfCnpjRemetente   String
   cpfCnpjDestinatario String
@@ -31,6 +32,15 @@ model SolicitacaoColeta {
   driverToken      String?  @unique
 
   @@map("solicitacoes_coleta")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique 
+  expiresAt DateTime 
+  clienteCpfCnpj String 
+  cliente   Cliente @relation(fields: [clienteCpfCnpj], references: [cpfCnpj])
+  @@map("password_reset_tokens")
 }
 
 model SolicitacaoDevolucao {
@@ -58,6 +68,8 @@ model Cliente {
   senha   String
   nome    String? // Nome (opcional)
   email   String? // Email (opcional)
+  coletasRemetidas SolicitacaoColeta[] @relation("RemetenteColetas")
+  resetTokens PasswordResetToken[]
 
   @@map("clientes")
 }
@@ -68,8 +80,7 @@ model HistoricoRastreio {
   localizacao   String   
 
   solicitacaoId   Int
-  solicitacao     SolicitacaoColeta @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
-
+  solicitacao   SolicitacaoColeta @relation(fields: [solicitacaoId], references: [id])
   @@map("historico_rastreio")
 }
 

@@ -1,9 +1,11 @@
+// Importações necessárias
 const { PrismaClient, StatusColeta } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 
+// --- Funções Auxiliares para gerar dados aleatórios ---
 
 function randomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -35,6 +37,7 @@ function randomAddress() {
 
 const statuses = Object.values(StatusColeta);
 function randomStatus() {
+    // Garante que a maioria seja PENDENTE ou EM_TRANSITO
     const S = statuses[randomInt(0, statuses.length - 1)];
     const chance = Math.random();
     if (chance < 0.4) return StatusColeta.PENDENTE;
@@ -42,35 +45,53 @@ function randomStatus() {
     return S;
 }
 
+// --- Função Principal do Seed ---
 
 async function main() {
     console.log("Iniciando o script de seed...");
 
+    // --- 1. Criação/Verificação do Administrador ---
     const adminEmail = "admin@transportes.com";
-    const adminSenha = "admin123"; 
+    const adminSenha = "admin123";
     const adminNome = "Administrador";
+    const clienteCpf = "09704195621";
+    const clientesenha = "admin123";
+    const clienteEmail = "arturlinhares2001@gmail.com"
+    const clienteNome = "Artur"
 
     const senhaHash = await bcrypt.hash(adminSenha, 10);
-    console.log("Senha do admin criptografada.");
+    const clientehash = await bcrypt.hash(clientesenha, 10)
 
     const admin = await prisma.funcionario.upsert({
-        where: { email: adminEmail }, 
-        update: {}, 
-        create: { 
+        where: { email: adminEmail },
+        update: {},
+        create: {
             email: adminEmail,
             senha: senhaHash,
             nome: adminNome
         }
     });
 
+    await prisma.cliente.create({
+        data: {
+            cpfCnpj: clienteCpf,
+            senha: clientehash,
+            nome: clienteNome,
+            email: clienteEmail
+        }
+    });
+
     console.log("Funcionário administrador criado/verificado:");
     console.log(admin);
 
+    // --- 2. Limpeza das Coletas Antigas ---
+    // A ordem é importante por causa das chaves estrangeiras
     console.log('Limpando tabelas de coletas/históricos...');
     await prisma.historicoRastreio.deleteMany({});
     await prisma.solicitacaoColeta.deleteMany({});
     console.log('Tabelas limpas.');
 
+    // --- 3. Criação de 30 Coletas Aleatórias ---
     const coletasParaCriar = 30;
     console.log(`Criando ${coletasParaCriar} coletas...`);
 
@@ -79,14 +100,15 @@ async function main() {
         const nf = randomNF();
         const statusAtual = randomStatus();
 
+        // Etapa 1: Criar a solicitação (baseado em server.js, linha 62)
         const novaSolicitacao = await prisma.solicitacaoColeta.create({
             data: {
                 nomeCliente: nome,
                 emailCliente: `${nome.toLowerCase().replace(/\s/g, '.')}@exemplo.com`,
                 enderecoColeta: randomAddress(),
                 tipoCarga: 'Caixa(s)',
-                cpfCnpjRemetente: randomCPF(),
-                cpfCnpjDestinatario: randomCPF(),
+                cpfCnpjRemetente: clienteCpf,
+                cpfCnpjDestinatario: clienteCpf,
                 numeroNotaFiscal: nf,
                 valorFrete: randomFloat(50, 350, 2),
                 pesoKg: randomFloat(1, 75, 1),
@@ -95,6 +117,7 @@ async function main() {
             }
         });
 
+        // Etapa 2: Atualizar com campos gerados (baseado em server.js, linhas 72-79)
         const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
         const driverTokenGerado = crypto.randomBytes(16).toString('hex');
 
@@ -106,7 +129,9 @@ async function main() {
             }
         });
 
-        
+        // Etapa 3: Criar histórico de rastreio (baseado em server.js, linha 264 e 468)
+
+        // Histórico de "Solicitado" (para todos)
         await prisma.historicoRastreio.create({
             data: {
                 status: StatusColeta.PENDENTE,
@@ -117,6 +142,7 @@ async function main() {
             }
         });
 
+        // Histórico do status atual (se não for pendente)
         if (statusAtual !== StatusColeta.PENDENTE) {
             let localizacao = 'Centro de Distribuição - Ouro Branco, MG';
             if (statusAtual === StatusColeta.CONCLUIDA) {
@@ -124,7 +150,7 @@ async function main() {
             } else if (statusAtual === StatusColeta.EM_ROTA_ENTREGA) {
                 localizacao = 'Em rota de entrega final';
             }
-            
+
             await prisma.historicoRastreio.create({
                 data: {
                     status: statusAtual,
@@ -136,11 +162,12 @@ async function main() {
             });
         }
     }
-    
+
     console.log(`${coletasParaCriar} coletas criadas.`);
     console.log("Seed concluído com sucesso!");
 }
 
+// --- Execução ---
 
 main()
     .catch((e) => {
@@ -148,5 +175,6 @@ main()
         process.exit(1);
     })
     .finally(async () => {
+        // Fecha a conexão com o banco
         await prisma.$disconnect();
     });
