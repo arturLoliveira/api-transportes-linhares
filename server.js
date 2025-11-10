@@ -315,7 +315,7 @@ app.get('/api/etiqueta/:nf', async (req, res) => {
 app.post('/api/driver/update', authMiddleware, async (req, res) => {
     const { numeroEncomenda, status, localizacao } = req.body;
 
-    if (!numeroEncomenda || !token || !status || !localizacao) {
+    if (!numeroEncomenda || !status || !localizacao) {
         return res.status(400).json({ error: "Dados insuficientes." });
     }
     if (!Object.values(StatusColeta).includes(status)) {
