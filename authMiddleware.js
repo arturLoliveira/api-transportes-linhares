@@ -20,7 +20,7 @@ function authMiddleware(req, res, next) {
 
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
         if (err) {
-            return res.status(401).json({ error: "Token inválido ou expirado." });
+            return res.status(401).json({ error: "Saia e faça login novamente" });
         }
         
     
