@@ -313,7 +313,7 @@ app.get('/api/etiqueta/:nf', async (req, res) => {
 
 
 app.post('/api/driver/update', authMiddleware, async (req, res) => {
-    const { numeroEncomenda, token, status, localizacao } = req.body;
+    const { numeroEncomenda, status, localizacao } = req.body;
 
     if (!numeroEncomenda || !token || !status || !localizacao) {
         return res.status(400).json({ error: "Dados insuficientes." });
@@ -329,9 +329,6 @@ app.post('/api/driver/update', authMiddleware, async (req, res) => {
         if (!coleta) {
             return res.status(404).json({ error: "Encomenda não encontrada." });
         }
-        if (coleta.driverToken !== token) {
-            return res.status(401).json({ error: "Token de autorização inválido." });
-        }
 
         await prisma.$transaction([
             prisma.solicitacaoColeta.update({
@@ -342,7 +339,8 @@ app.post('/api/driver/update', authMiddleware, async (req, res) => {
                 data: {
                     status: status,
                     localizacao: localizacao,
-                    solicitacao: { connect: { numeroEncomenda: numeroEncomenda } }
+                    solicitacao: { connect: { numeroEncomenda: numeroEncomenda } },
+                    motoristaId: driverId
                 }
             })
         ]);

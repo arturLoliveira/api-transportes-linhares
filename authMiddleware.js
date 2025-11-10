@@ -24,7 +24,7 @@ function authMiddleware(req, res, next) {
         }
         
     
-        if (decoded.role !== 'admin' && decoded.role !== 'cliente') {
+        if (decoded.role !== 'admin' && decoded.role !== 'cliente' && decoded.role !== 'driver') {
              return res.status(403).json({ error: "Permissão negada. Role inválida ou ausente no token." });
         }
 
