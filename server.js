@@ -339,8 +339,7 @@ app.post('/api/driver/update', authMiddleware, async (req, res) => {
                 data: {
                     status: status,
                     localizacao: localizacao,
-                    solicitacao: { connect: { numeroEncomenda: numeroEncomenda } },
-                    motoristaId: driverId
+                    solicitacao: { connect: { numeroEncomenda: numeroEncomenda } }
                 }
             })
         ]);
