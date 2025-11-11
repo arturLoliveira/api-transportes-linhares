@@ -104,9 +104,7 @@ app.post('/api/coletas/solicitar', async (req, res) => {
             valorFrete, pesoKg, dataVencimento
         } = req.body;
 
-        if (!valorFrete || parseFloat(valorFrete) <= 0) {
-            return res.status(400).json({ error: "O 'valorFrete' é obrigatório e deve ser maior do que zero." });
-        }
+
 
         const novaSolicitacao = await prisma.solicitacaoColeta.create({
             data: {
@@ -121,7 +119,9 @@ app.post('/api/coletas/solicitar', async (req, res) => {
 
         const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
         const driverTokenGerado = crypto.randomBytes(16).toString('hex');
+        const valorFreteFinal = parseFloat(valorFreteInput || 0);
 
+        if(valorFreteFinal > 0) {
         try {
             const customerIdAsaas = await getOrCreateAsaasCustomer(novaSolicitacao);
             const dataVencimentoAsaas = novaSolicitacao.dataVencimento
@@ -160,7 +160,7 @@ app.post('/api/coletas/solicitar', async (req, res) => {
         } catch (asaasError) {
             console.error("ERRO ASAAS CATCH:", asaasError);
         }
-
+    }
         const coletaAtualizada = await prisma.solicitacaoColeta.update({
             where: { id: novaSolicitacao.id },
             data: {
@@ -188,6 +188,82 @@ app.post('/api/coletas/solicitar', async (req, res) => {
     }
 });
 
+
+app.post('/api/admin/coletas/:id/gerar-boleto', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { novoValorFrete } = req.body;
+    const coletaId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        let coleta = await prisma.solicitacaoColeta.findUnique({
+            where: { id: coletaId }
+        });
+
+        if (!coleta) {
+            return res.status(404).json({ error: "Coleta não encontrada." });
+        }
+
+        if (novoValorFrete !== undefined && parseFloat(novoValorFrete) > 0) {
+            const valor = parseFloat(novoValorFrete);
+            coleta = await prisma.solicitacaoColeta.update({
+                where: { id: coletaId },
+                data: { valorFrete: valor }
+            });
+        } else if (coleta.valorFrete === 0) {
+             return res.status(400).json({ error: "O valor do frete deve ser maior que zero para gerar o boleto." });
+        }
+
+        const customerIdAsaas = await getOrCreateAsaasCustomer(coleta); 
+        const dataVencimentoAsaas = coleta.dataVencimento
+            ? new Date(coleta.dataVencimento).toISOString().split('T')[0]
+            : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const asaasResponse = await fetch(`${ASAAS_API_URL}/payments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'access_token': ASAAS_API_KEY
+            },
+            body: JSON.stringify({
+                customer: customerIdAsaas,
+                billingType: 'BOLETO',
+                value: coleta.valorFrete, 
+                dueDate: dataVencimentoAsaas,
+                description: `Serviço de Frete NF ${coleta.numeroNotaFiscal}`,
+            })
+        });
+
+        const paymentData = await asaasResponse.json();
+
+        if (!asaasResponse.ok || paymentData.errors) {
+            console.error("ERRO ASAAS na GERAÇÃO ADMIN:", paymentData.errors);
+            return res.status(500).json({ error: `Falha na API Asaas: ${paymentData.errors?.[0]?.description || 'Erro desconhecido.'}` });
+        }
+
+        const coletaComBoleto = await prisma.solicitacaoColeta.update({
+            where: { id: coletaId },
+            data: {
+                boletoUrl: paymentData.bankSlipUrl,
+                boletoLinhaDigitavel: paymentData.bankSlipBarcode,
+                statusPagamento: 'PENDENTE' 
+            },
+            select: { numeroEncomenda: true, valorFrete: true, boletoUrl: true }
+        });
+
+        res.status(200).json({ 
+            message: `Boleto gerado com sucesso para ${coletaComBoleto.numeroEncomenda}.`,
+            boletoUrl: coletaComBoleto.boletoUrl
+        });
+
+    } catch (error) {
+        console.error("Erro ao gerar boleto pelo admin:", error);
+        res.status(500).json({ error: "Erro interno do servidor ao processar o boleto." });
+    }
+});
 
 app.post('/api/rastreamento/remetente', async (req, res) => {
     try {
