@@ -843,6 +843,39 @@ app.delete('/api/admin/funcionarios/:id', authMiddleware, async (req, res) => {
         return res.status(500).json({ error: 'Erro interno ao excluir funcionário.' });
     }
 });
+app.delete('/api/admin/clientes/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const clienteId = parseInt(id);
+
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: "Acesso negado. Apenas administradores." });
+    }
+
+    try {
+        const clienteExcluido = await prisma.cliente.delete({
+            where: { id: clienteId },
+        });
+
+        return res.status(200).json({
+            message: `Cliente ${clienteExcluido.nome || clienteExcluido.cpfCnpj} excluído com sucesso.`,
+            id: clienteExcluido.id
+        });
+
+    } catch (error) {
+        console.error('ERRO NO BACKEND: Falha ao excluir cliente:', error);
+        
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Cliente não encontrado.' });
+        }
+        
+        if (error.code === 'P2003') {
+             return res.status(409).json({ error: 'Não é possível excluir o cliente. Existem coletas associadas que precisam ser removidas primeiro.' });
+        }
+
+        return res.status(500).json({ error: 'Erro interno ao excluir o cliente.' });
+    }
+});
+
 
 app.get('/api/admin/clientes/list', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') {
