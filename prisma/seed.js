@@ -29,14 +29,14 @@ async function main() {
     console.log('Todas as tabelas foram limpas.');
     
     // --- Dados Fixos de Teste ---
-    const adminEmail = "isabelledacosta522@gmail.com";
-    const adminSenha = "admin123";
-    const adminNome = "Isabelle";
+    const adminEmail = "";
+    const adminSenha = "";
+    const adminNome = "";
     
-    const clienteCpf = "09704195621";
-    const clientesenha = "admin123";
-    const clienteEmail = "arturlinhares2001@gmail.com"
-    const clienteNome = "Artur Linhares";
+    const clienteCpf = "";
+    const clientesenha = "";
+    const clienteEmail = ""
+    const clienteNome = "";
 
     const senhaHash = await bcrypt.hash(adminSenha, 10);
     const clientehash = await bcrypt.hash(clientesenha, 10)
