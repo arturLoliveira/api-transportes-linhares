@@ -123,7 +123,9 @@ app.post('/api/coletas/solicitar', async (req, res) => {
 
         if(valorFreteFinal > 0) {
         try {
+            console.log("DIAG: Chave ASAAS configurada?", !!ASAAS_API_KEY); // LOG 1: Confirma se a chave existe
             const customerIdAsaas = await getOrCreateAsaasCustomer(novaSolicitacao);
+            console.log("DIAG: Customer ID obtido:", customerIdAsaas); // LOG 2: Confirma se o cliente Asaas foi encontrado/criado
             const dataVencimentoAsaas = novaSolicitacao.dataVencimento
                 ? new Date(novaSolicitacao.dataVencimento).toISOString().split('T')[0]
                 : new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -144,6 +146,7 @@ app.post('/api/coletas/solicitar', async (req, res) => {
             });
 
             const paymentData = await asaasResponse.json();
+            console.log("DIAG: Status da resposta ASAAS:", asaasResponse.status); // LOG 3: Status HTTP
 
             if (!asaasResponse.ok || paymentData.errors) {
                 console.error("ERRO ASAAS: Falha ao gerar boleto. NF:", numeroNotaFiscal, paymentData.errors);
