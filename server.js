@@ -119,7 +119,7 @@ app.post('/api/coletas/solicitar', async (req, res) => {
 
         const numeroEncomendaGerado = `OC-${1000 + novaSolicitacao.id}`;
         const driverTokenGerado = crypto.randomBytes(16).toString('hex');
-        const valorFreteFinal = parseFloat(valorFreteInput || 0);
+        const valorFreteFinal = parseFloat(valorFrete || 0);
 
         if(valorFreteFinal > 0) {
         try {
