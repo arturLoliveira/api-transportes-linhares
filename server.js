@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+import dns from 'node:dns';
+
+dns.setDefaultResultOrder('ipv4first');
 const { PrismaClient, StatusColeta } = require('@prisma/client');
 const { Resend } = require('resend');
 const PDFDocument = require('pdfkit');
